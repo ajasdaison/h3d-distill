@@ -1,0 +1,77 @@
+<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+
+    <!-- Distill v2 template -->
+    <script src="/dist/template.v2.js"></script>
+
+    <!-- Optional libraries (add only if needed) -->
+    <!-- <script src="https://d3js.org/d3.v7.min.js"></script> -->
+
+    <title>Distill Article</title>
+  </head>
+
+  <body>
+    <!-- Header -->
+    <distill-header></distill-header>
+
+    <!-- Front Matter (metadata only) -->
+    <d-front-matter>
+      <script id="distill-front-matter" type="text/json">
+        {
+          "title": "HUMANS 3D",
+          "description": "Short description of the article.",
+          "published": "YYYY-MM-DD",
+          "authors": []
+        }
+      </script>
+    </d-front-matter>
+
+    <!-- Auto-generated title & byline -->
+    <d-title></d-title>
+    <d-byline></d-byline>
+
+    <!-- Main Article Body -->
+    <d-article>
+
+      <p>
+        Write your introduction here.
+      </p>
+
+      <h2>Section Title</h2>
+
+      <p>
+        Write section content here.
+      </p>
+
+      <!-- Example code block -->
+      <!--
+      <d-code block language="python">
+      print("Hello, Distill")
+      </d-code>
+      -->
+
+      <!-- Example figure / visualization container -->
+      <!-- <div id="figure"></div> -->
+
+    </d-article>
+
+    <!-- Appendix (optional) -->
+    <d-appendix>
+      <h3>Contributions</h3>
+      <p>Some text describing who did what.</p>
+
+      <h3>Reviewers</h3>
+      <p>Some text with links describing who reviewed the article.</p>
+
+      <!--<d-bibliography src="bibliography.bib"></d-bibliography> -->
+    </d-appendix>
+
+
+    <!-- Footer -->
+    <distill-footer></distill-footer>
+  </body>
+</html>
+
