@@ -43,11 +43,11 @@
         To overcome these issues, the SMPL (Skinned Multi-Person Linear) model was introduced as a data-driven and efficient human body representation. It models both body shape differences and pose-dependent deformations using a simple linear formulation based on joint rotations, making training easier with large 3D datasets. Since SMPL is based on blend skinning, it integrates well with existing rendering engines and produces more accurate results than earlier models like BlendSCAPE. Additionally, SMPL can simulate soft-tissue deformations, resulting in more realistic human motion and making it widely used in current research.
       </p>
 
-      <!-- <h2>Section Title</h2> -->
-
-      <!-- <p>
-        Write section content here.
-</p> -->
+       <h2>Introduction</h2> 
+      <p>
+        Creating realistic animated human body models has been a long-standing challenge in computer graphics. Traditional commercial approaches rely on manually rigging a mesh and sculpting many blend shapes to fix issues in standard skinning methods. While effective, this process requires significant manual effort and time. Linear Blend Skinning (LBS), although widely supported by game engines and efficient to render, often produces unrealistic joint deformations such as the “taffy” and “bowtie” effects. Several improved skinning techniques have been proposed to reduce these artifacts, but they either increase complexity or are not widely compatible with existing graphics pipelines.
+On the research side, many data-driven statistical body models have been developed using 3D scans of people in different poses. These models can capture body shape variations and pose-dependent deformations more realistically, especially those based on deformation and triangle-based representations. However, despite their realism, most of these methods are not compatible with standard rendering engines or require specialized pipelines. As a result, existing models often compromise between realism, efficiency, compatibility, and ease of use. This gap motivates the need for a body model that is both realistic and simple, while remaining compatible with standard skinning methods used in modern graphics software.
+</p> 
 
       <!-- Example code block -->
       <!--
