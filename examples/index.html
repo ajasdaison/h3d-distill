@@ -62,6 +62,9 @@ To address the limitations of basic skinning, blend shape–based methods such a
 
 Other approaches attempt to improve realism by increasing model complexity, such as learning deformation parameters directly, adding extra bones, or over-parameterizing transformations and then reducing them using PCA. While these methods can improve deformation quality, they often increase computational cost, lack physical intuition, or are incompatible with standard game engines. Overall, existing approaches struggle to balance realism, simplicity, generalization across body shapes, and compatibility with industry-standard animation pipelines, highlighting the need for a practical and data-driven body model.
       </p>
+      <p>
+        Early human body modeling methods mainly focused on poseable models for a single body shape and often used PCA to represent shape variation without considering pose-dependent deformations. Later models such as SCAPE introduced pose-dependent shape changes learned from 3D scans using triangle-based deformations, allowing realistic combinations of body shape and pose. However, these models are generally incompatible with standard animation software. Some vertex-based approaches attempted to bridge this gap by learning pose and shape variations together, but they often rely on complex formulations, limited training data, or abstract structures, which reduce realism and usability. These limitations highlight the need for a simpler, vertex-based model that can realistically capture a wide range of human body shapes and poses while remaining compatible with existing animation pipelines.
+      </p>
       <!-- Example code block -->
       <!--
       <d-code block language="python">
