@@ -65,6 +65,94 @@ Other approaches attempt to improve realism by increasing model complexity, such
       <p>
         Early human body modeling methods mainly focused on poseable models for a single body shape and often used PCA to represent shape variation without considering pose-dependent deformations. Later models such as SCAPE introduced pose-dependent shape changes learned from 3D scans using triangle-based deformations, allowing realistic combinations of body shape and pose. However, these models are generally incompatible with standard animation software. Some vertex-based approaches attempted to bridge this gap by learning pose and shape variations together, but they often rely on complex formulations, limited training data, or abstract structures, which reduce realism and usability. These limitations highlight the need for a simpler, vertex-based model that can realistically capture a wide range of human body shapes and poses while remaining compatible with existing animation pipelines.
       </p>
+      <h2>Model Formulation</h2>
+      <p>
+Similar to SCAPE, SMPL decomposes human body shape into identity-dependent shape variation and pose-dependent non-rigid deformations. Unlike SCAPE, SMPL adopts a vertex-based skinning formulation using corrective blend shapes.
+</p>
+
+<p>
+The model starts from an artist-designed template mesh with
+<d-math>N = 6890</d-math> vertices and
+<d-math>K = 23</d-math> joints.
+</p>
+
+<h3>Template Mesh</h3>
+
+<ul>
+  <li>Starts from a single neutral body mesh</li>
+  <li>Same topology for all people (identical topology for male and female bodies)</li>
+  <li>Already rigged and segmented, making it compatible with standard animation tools</li>
+</ul>
+
+<p>
+SMPL is a parametric function that takes:
+</p>
+
+<ul>
+  <li><strong>Shape parameters</strong> &rarr; who the person is</li>
+  <li><strong>Pose parameters</strong> &rarr; how the person is moving</li>
+</ul>
+
+<p>
+and outputs a fully posed 3D human mesh.
+</p>
+
+<p>
+The model consists of a mean template shape
+<d-math>\mathbf{T} \in \mathbb{R}^{3N}</d-math>
+defined in the rest pose, a blend weight matrix
+<d-math>\mathbf{W} \in \mathbb{R}^{N \times K}</d-math>,
+a shape blend shape function
+<d-math>
+B_s(\boldsymbol{\beta}) : \mathbb{R}^{|\boldsymbol{\beta}|} \rightarrow \mathbb{R}^{3N}
+</d-math>,
+a joint regressor
+<d-math>
+J(\boldsymbol{\beta}) : \mathbb{R}^{|\boldsymbol{\beta}|} \rightarrow \mathbb{R}^{3K}
+</d-math>,
+and a pose-dependent blend shape function
+<d-math>
+B_p(\boldsymbol{\theta}) : \mathbb{R}^{|\boldsymbol{\theta}|} \rightarrow \mathbb{R}^{3N}
+</d-math>.
+</p>
+
+<p>
+The shape parameters <d-math>\boldsymbol{\beta}</d-math> control body identity such as height, weight, and body proportions.
+</p>
+
+<p>
+Joint locations are not fixed and depend on body shape, since different body types (e.g., thin and heavy bodies) have different joint placements.
+</p>
+
+<p>
+Posing alone causes skinning artifacts such as joint collapse and the candy-wrapper effect. Pose blend shapes
+<d-math>B_p(\boldsymbol{\theta})</d-math>
+correct these artifacts and also capture static soft-tissue deformations caused by pose.
+</p>
+
+<p>
+The shape and pose blend shapes are additively applied to the template in the rest pose. This defines a function
+<d-math>
+M(\boldsymbol{\beta}, \boldsymbol{\theta}; \Phi)
+</d-math>
+that maps shape and pose parameters to a posed mesh, where
+<d-math>\Phi</d-math>
+denotes the learned model parameters.
+</p>
+
+<p>
+Finally, a standard skinning method is applied:
+</p>
+
+<ol>
+  <li>Linear Blend Skinning (LBS)</li>
+  <li>Dual-Quaternion Blend Skinning (DQBS)</li>
+</ol>
+
+<p>
+Skinning is treated as a black box, and SMPL learns corrective deformations on top of whichever skinning method is used.
+</p>
+
       <!-- Example code block -->
       <!--
       <d-code block language="python">
