@@ -153,6 +153,174 @@ Finally, a standard skinning method is applied:
 Skinning is treated as a black box, and SMPL learns corrective deformations on top of whichever skinning method is used.
 </p>
 
+  <d-section>
+    <h2>Blend Skinning Formulation</h2>
+
+    <p>
+      To define notation and fix ideas, we describe the Linear Blend Skinning (LBS)
+      version of SMPL. The dual-quaternion variant only differs in the skinning
+      equation. Meshes and blend shapes are represented as vectors of vertices,
+      while individual vertices are represented as 3D vectors. Homogeneous
+      coordinates are used where required.
+    </p>
+  </d-section>
+
+  <d-section>
+    <h3>Pose Representation</h3>
+
+    <p>
+      The human body is modeled using a kinematic tree with
+      <d-math>K = 23</d-math> joints. Each joint rotation is represented in
+      axis–angle form as
+      <d-math>\boldsymbol{\theta}_k \in \mathbb{R}^3</d-math>.
+      The full pose vector is given by
+      <d-math>\boldsymbol{\theta} \in \mathbb{R}^{72}</d-math>,
+      including three additional parameters for the global orientation.
+    </p>
+  </d-section>
+
+  <d-section>
+    <h3>Axis–Angle to Rotation</h3>
+
+    <p>
+      Axis–angle vectors are converted to rotation matrices using Rodrigues’
+      formula. Let <d-math>\boldsymbol{\omega}</d-math> denote an axis–angle
+      vector and <d-math>\hat{\boldsymbol{\omega}}</d-math> its skew-symmetric
+      matrix. The rotation matrix is computed as:
+    </p>
+
+    <d-math block>
+\exp(\hat{\boldsymbol{\omega}}) =
+\mathbf{I}
++ \frac{\sin \|\boldsymbol{\omega}\|}{\|\boldsymbol{\omega}\|}
+\hat{\boldsymbol{\omega}}
++ \frac{1 - \cos \|\boldsymbol{\omega}\|}{\|\boldsymbol{\omega}\|^2}
+\hat{\boldsymbol{\omega}}^2
+    </d-math>
+  </d-section>
+
+  <d-section>
+    <h3>Linear Blend Skinning</h3>
+
+    <p>
+      Linear Blend Skinning maps vertices from the rest pose to the posed
+      configuration using a weighted combination of joint transformations.
+      The skinning function is defined as:
+    </p>
+
+    <d-math block>
+W(\overline{\mathbf{T}}, \mathbf{J}, \boldsymbol{\theta}, \mathbf{W})
+: \mathbb{R}^{3N} \rightarrow \mathbb{R}^{3N}
+    </d-math>
+
+    <p>
+      Each vertex <d-math>\overline{\mathbf{t}}_i</d-math> (in homogeneous
+      coordinates) is transformed as:
+    </p>
+
+    <d-math block>
+\overline{\mathbf{t}}_i' =
+\sum_{k=1}^{K}
+w_{k,i} \,
+\mathbf{G}_k'(\boldsymbol{\theta}, \mathbf{J})
+\overline{\mathbf{t}}_i
+    </d-math>
+
+    <p>
+      The relative joint transformation is defined as:
+    </p>
+
+    <d-math block>
+\mathbf{G}_k'(\boldsymbol{\theta}, \mathbf{J})
+=
+\mathbf{G}_k(\boldsymbol{\theta}, \mathbf{J})
+\mathbf{G}_k(\boldsymbol{\theta}^*, \mathbf{J})^{-1}
+    </d-math>
+
+    <p>
+      where <d-math>\boldsymbol{\theta}^*</d-math> denotes the rest pose.
+      The global transformation of joint <d-math>k</d-math> is computed by
+      accumulating transformations along the kinematic chain:
+    </p>
+
+    <d-math block>
+\mathbf{G}_k(\boldsymbol{\theta}, \mathbf{J})
+=
+\prod_{j \in \mathcal{A}(k)}
+\begin{bmatrix}
+\exp(\hat{\boldsymbol{\omega}}_j) & \mathbf{j}_j \\
+\mathbf{0}^T & 1
+\end{bmatrix}
+    </d-math>
+
+    <p>
+      Here, <d-math>w_{k,i}</d-math> denotes the blend weight of joint
+      <d-math>k</d-math> for vertex <d-math>i</d-math>, and
+      <d-math>\mathcal{A}(k)</d-math> denotes the ordered set of ancestor
+      joints of joint <d-math>k</d-math>. For compatibility with real-time
+      engines, at most four joints influence each vertex.
+    </p>
+  </d-section>
+
+  <d-section>
+    <h3>SMPL Modification to Skinning</h3>
+
+    <p>
+      Rather than modifying the skinning function itself, SMPL introduces
+      additive shape and pose-dependent deformations applied in the rest pose.
+      The posed template is defined as:
+    </p>
+
+    <d-math block>
+\mathbf{T}_p(\boldsymbol{\beta}, \boldsymbol{\theta})
+=
+\bar{\mathbf{T}}
++ B_s(\boldsymbol{\beta})
++ B_p(\boldsymbol{\theta})
+    </d-math>
+
+    <p>
+      The final SMPL model is then given by:
+    </p>
+
+    <d-math block>
+M(\boldsymbol{\beta}, \boldsymbol{\theta}; \Phi)
+=
+W(\mathbf{T}_p(\boldsymbol{\beta}, \boldsymbol{\theta}),
+\mathbf{J}(\boldsymbol{\beta}),
+\boldsymbol{\theta},
+\mathbf{W})
+    </d-math>
+
+    <p>
+      In per-vertex form, the deformation is expressed as:
+    </p>
+
+    <d-math block>
+\mathbf{t}_i' =
+\sum_{k=1}^{K}
+w_{k,i}
+\mathbf{G}_k(\boldsymbol{\theta}, \mathbf{J}(\boldsymbol{\beta}))
+\left(
+\mathbf{t}_i
++ \mathbf{b}_{s,i}(\boldsymbol{\beta})
++ \mathbf{b}_{p,i}(\boldsymbol{\theta})
+\right)
+    </d-math>
+  </d-section>
+
+  <d-section>
+    <h3>Discussion</h3>
+
+    <p>
+      By retaining standard Linear Blend Skinning and learning corrective
+      blend shapes from data, SMPL achieves realistic pose-dependent
+      deformations while remaining compatible with existing animation
+      pipelines. This design choice allows the model to correct common
+      skinning artifacts without increasing runtime complexity.
+    </p>
+  </d-section>
+
       <!-- Example code block -->
       <!--
       <d-code block language="python">
