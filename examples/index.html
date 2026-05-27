@@ -1,145 +1,803 @@
 <!doctype html>
-<html lang="en">
+<html>
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>HUMANS 3D: SMPL Body Modeling</title>
 
-    <!-- Distill v2 template (MUST be absolute URL) -->
     <script src="https://distill.pub/template.v2.js"></script>
 
-    <title>HUMANS 3D</title>
-
-    <!-- Custom styles belong in the head -->
-    <link rel="stylesheet" href="styles.css" />
+    <style>
+      d-article h2 {
+        margin-top: 2rem;
+      }
+      d-article h3 {
+        margin-top: 1.5rem;
+      }
+    </style>
   </head>
 
   <body>
+    <distill-header></distill-header>
 
-    <!-- Front Matter (metadata only, JSON, application/json) -->
     <d-front-matter>
-      <script type="application/json">
+      <script id="distill-front-matter" type="text/json">
         {
           "title": "HUMANS 3D",
-          "description": "A structured explanation of the SMPL human body model.",
+          "description": "A technical breakdown of the SMPL body model and additive blend shapes.",
           "published": "2026-01-30",
           "authors": [
             {
-              "author": "Ajas Daison",
-              "affiliation": "Computer Science"
+              "author": "Author Name",
+              "authorURL": "#"
             }
           ]
         }
       </script>
     </d-front-matter>
 
-    <!-- Auto-generated title & byline -->
-    <d-title></d-title>
+    <d-title>
+      <h1>HUMANS 3D</h1>
+      <p>Data-driven human body representation using SMPL.</p>
+    </d-title>
+
     <d-byline></d-byline>
 
-    <!-- Main article -->
     <d-article>
-
       <p>
         Earlier 3D human body models mainly focused on representing different
         body shapes but had difficulty handling realistic pose-related
-        deformations. Models such as SCAPE introduced pose-dependent shape
-        changes but were computationally expensive and incompatible with
-        standard graphics pipelines.
+        deformations. Models such as SCAPE and its variants introduced
+        pose-dependent shape changes, but their complex formulations made
+        training difficult and computationally expensive. These models were also
+        less compatible with standard graphics pipelines, limiting their
+        practical use in real-time applications and animation systems.
+      </p>
+      <p>
+        To overcome these issues, the SMPL (Skinned Multi-Person Linear) model
+        was introduced as a data-driven and efficient human body representation.
+        It models both body shape differences and pose-dependent deformations
+        using a simple linear formulation based on joint rotations, making
+        training easier with large 3D datasets. Since SMPL is based on blend
+        skinning, it integrates well with existing rendering engines and
+        produces more accurate results than earlier models like BlendSCAPE.
+        Additionally, SMPL can simulate soft-tissue deformations, resulting in
+        more realistic human motion and making it widely used in current
+        research.
+      </p>
+
+      <h2>Introduction</h2>
+      <p>
+        Creating realistic animated human body models has been a long-standing
+        challenge in computer graphics. Traditional commercial approaches rely
+        on manually rigging a mesh and sculpting many blend shapes to fix issues
+        in standard skinning methods. While effective, this process requires
+        significant manual effort and time. Linear Blend Skinning (LBS),
+        although widely supported by game engines and efficient to render, often
+        produces unrealistic joint deformations such as the “taffy” and “bowtie”
+        effects. Several improved skinning techniques have been proposed to
+        reduce these artifacts, but they either increase complexity or are not
+        widely compatible with existing graphics pipelines.
       </p>
 
       <p>
-        The SMPL (Skinned Multi-Person Linear) model addressed these limitations
-        by combining pose-dependent deformations with linear blend skinning,
-        resulting in a model that is efficient, realistic, and compatible with
-        existing rendering engines.
+        On the research side, many data-driven statistical body models have been
+        developed using 3D scans of people in different poses. These models can
+        capture body shape variations and pose-dependent deformations more
+        realistically, especially those based on deformation and triangle-based
+        representations. However, despite their realism, most of these methods
+        are not compatible with standard rendering engines or require
+        specialized pipelines. As a result, existing models often compromise
+        between realism, efficiency, compatibility, and ease of use. This gap
+        motivates the need for a body model that is both realistic and simple,
+        while remaining compatible with standard skinning methods used in modern
+        graphics software.
       </p>
 
-      <d-section>
-        <h2>Introduction</h2>
+      <p>
+        Recent human body modeling approaches focus on learning body shape and
+        pose deformations directly from 3D scan data. By aligning a common
+        template mesh to thousands of registered scans, models can be trained to
+        minimize vertex-level errors between the predicted body and real human
+        meshes. Datasets such as CAESAR have been widely used to learn
+        identity-based body shape variations using PCA, separately for male and
+        female bodies. Learning joint locations directly from body shape has
+        also proven important, as accurate joint regression is necessary to
+        produce natural pose-dependent deformations during animation.
+      </p>
 
+      <p>
+        To evaluate model performance, trained body models are commonly compared
+        with existing methods using both qualitative animations and quantitative
+        vertex error measurements on unseen test meshes. Comparisons with
+        deformation-based models like BlendSCAPE show that vertex-based skinned
+        models can achieve equal or better accuracy when trained on the same
+        data. Extensions of these models further improve realism by capturing
+        soft-tissue dynamics using temporal 3D data. By learning dynamic
+        deformations that depend on motion and body shape, such models can
+        simulate realistic muscle and fat movement while remaining compatible
+        with standard rendering engines.
+      </p>
+
+      <h2>Motivation</h2>
+      <p>
+        Why do we even need SMPL? Before it came along, researchers and artists
+        had to choose between realism and speed. You could have a beautiful
+        model that took hours to render, or a fast one that looked like a
+        pinched balloon when it moved.
+      </p>
+
+      <table>
+        <thead>
+          <tr>
+            <th>Model Type</th>
+            <th>The Problem</th>
+            <th>The SMPL Solution</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><strong>SCAPE & Variants</strong></td>
+            <td>Realistic but slow and mathematically "heavy."</td>
+            <td>Keeps the realism but uses linear math.</td>
+          </tr>
+          <tr>
+            <td><strong>Basic Skeleton Rigs</strong></td>
+            <td>Joints collapse (the "taffy" effect) when bending.</td>
+            <td>Corrects joints with learned blend shapes.</td>
+          </tr>
+          <tr>
+            <td><strong>Raw Meshes</strong></td>
+            <td>Too many points to control manually (6,000+).</td>
+            <td>Reduces everything to just a few dozen numbers.</td>
+          </tr>
+          <tr>
+            <td><strong>Mocap Markers</strong></td>
+            <td>Expensive and hard to generalize to new bodies.</td>
+            <td>Works with any body shape or pose.</td>
+          </tr>
+        </tbody>
+      </table>
+
+      <h2>Related Work</h2>
+      <p>
+        Linear blend skinning and blend shapes are widely used in the animation
+        industry because they are simple, fast, and supported by most rendering
+        engines. In linear blend skinning (LBS), mesh vertices are influenced by
+        nearby bones using weighted transformations, but this often causes
+        unrealistic joint deformations. Many improved skinning techniques such
+        as quaternion, dual-quaternion, and spherical skinning have been
+        proposed to reduce these artifacts. However, these generic solutions
+        still tend to produce unnatural results and are not always practical for
+        real-world animation pipelines.
+      </p>
+      <p>
+        Auto-rigging methods have also been developed to automatically infer
+        skeletons, joints, and skinning weights from meshes, reducing manual
+        work. Despite this, most auto-rigging approaches do not learn corrective
+        blend shapes and therefore fail to fix common LBS issues or generalize
+        well to new poses. To address the limitations of basic skinning, blend
+        shape–based methods such as Pose Space Deformation (PSD) were
+        introduced, where pose-dependent corrections are added to a base mesh.
+        These methods rely on sculpted corrective shapes for specific poses and
+        interpolate between them using distance-based weighting functions.
+      </p>
+      <p>
+        Learning-based approaches later replaced manual sculpting by learning
+        pose-dependent deformations from registered 3D scans. However, many of
+        these methods either focus on limited body regions, require dense
+        training data, or become complex to control as the number of corrective
+        shapes increases. Other approaches attempt to improve realism by
+        increasing model complexity, such as learning deformation parameters
+        directly, adding extra bones, or over-parameterizing transformations and
+        then reducing them using PCA. Overall, existing approaches struggle to
+        balance realism, simplicity, and compatibility with industry-standard
+        animation pipelines.
+      </p>
+      <p>
+        Early human body modeling methods mainly focused on poseable models for
+        a single body shape and often used PCA to represent shape variation
+        without considering pose-dependent deformations. Later models such as
+        SCAPE introduced pose-dependent shape changes learned from 3D scans
+        using triangle-based deformations, allowing realistic combinations of
+        body shape and pose. However, these models are generally incompatible
+        with standard animation software.
+      </p>
+      <h2>Model Formulation</h2>
+      <p>
+        At a high level, the SMPL pipeline takes simple inputs and converts
+        them into a complex, posed 3D mesh through a series of additive steps:
+      </p>
+
+      <ol>
+        <li>
+          <strong>Shape Input (<d-math>\beta</d-math>)</strong>: Choose the
+          body's proportions.
+        </li>
+        <li>
+          <strong>Template Generation</strong>: The base mesh is deformed to
+          match the identity.
+        </li>
+        <li>
+          <strong>Pose Corrections</strong>: Muscles bulge and skin folds based
+          on the target pose.
+        </li>
+        <li>
+          <strong>Articulation</strong>: The skeleton moves into position.
+        </li>
+        <li>
+          <strong>Linear Blend Skinning</strong>: The final mesh vertices are
+          calculated.
+        </li>
+      </ol>
+
+      <p>
+        Similar to SCAPE, SMPL decomposes human body shape into
+        identity-dependent shape variation and pose-dependent non-rigid
+        deformations. Unlike SCAPE, SMPL adopts a vertex-based skinning
+        formulation using corrective blend shapes.
+      </p>
+
+      <p>
+        The model starts from an artist-designed template mesh with
+        <d-math>N = 6890</d-math> vertices and <d-math>K = 23</d-math> joints.
+      </p>
+
+      <h3>Template Mesh</h3>
+      <ul>
+        <li>Starts from a single neutral body mesh</li>
+        <li>
+          Same topology for all people (identical topology for male and female
+          bodies)
+        </li>
+        <li>
+          Already rigged and segmented, making it compatible with standard
+          animation tools
+        </li>
+      </ul>
+
+      <p>
+        The template isn't just a random mesh; it's a carefully designed
+        topological map that stays consistent across every person the model
+        generates.
+      </p>
+
+      <table>
+        <thead>
+          <tr>
+            <th>Property</th>
+            <th>Value</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>Vertices (<d-math>N</d-math>)</td>
+            <td>6,890</td>
+          </tr>
+          <tr>
+            <td>Faces</td>
+            <td>13,776</td>
+          </tr>
+          <tr>
+            <td>Joints (<d-math>K</d-math>)</td>
+            <td>23 (plus root)</td>
+          </tr>
+          <tr>
+            <td>Shape Parameters (<d-math>\beta</d-math>)</td>
+            <td>Typically 10 dimensions</td>
+          </tr>
+          <tr>
+            <td>Pose Parameters (<d-math>\theta</d-math>)</td>
+            <td>72 dimensions (24 joints &times; 3)</td>
+          </tr>
+        </tbody>
+      </table>
+
+      <p>SMPL is a parametric function that takes:</p>
+      <ul>
+        <li>
+          <strong>Shape parameters</strong> (<d-math>\mathbf{\beta}</d-math>)
+          &rarr; who the person is
+        </li>
+        <li>
+          <strong>Pose parameters</strong> (<d-math>\mathbf{\theta}</d-math>)
+          &rarr; how the person is moving
+        </li>
+      </ul>
+
+      <p>
+        The model consists of a mean template shape
+        <d-math>\mathbf{T} \in \mathbb{R}^{3N}</d-math>
+        defined in the rest pose, a blend weight matrix
+        <d-math>\mathbf{W} \in \mathbb{R}^{N \times K}</d-math>, a shape blend
+        shape function
+        <d-math
+          >B_s(\mathbf{\beta}) : \mathbb{R}^{|\mathbf{\beta}|} \rightarrow
+          \mathbb{R}^{3N}</d-math
+        >, a joint regressor
+        <d-math
+          >J(\mathbf{\beta}) : \mathbb{R}^{|\mathbf{\beta}|} \rightarrow
+          \mathbb{R}^{3K}</d-math
+        >, and a pose-dependent blend shape function
+        <d-math
+          >B_p(\mathbf{\theta}) : \mathbb{R}^{|\mathbf{\theta}|} \rightarrow
+          \mathbb{R}^{3N}</d-math
+        >.
+      </p>
+
+      <p>
+        The shape parameters <d-math>\mathbf{\beta}</d-math> control body
+        identity such as height, weight, and body proportions. Joint locations
+        are not fixed and depend on body shape, since different body types have
+        different joint placements.
+      </p>
+
+      <p>
+        Posing alone causes skinning artifacts such as joint collapse and the
+        candy-wrapper effect. Pose blend shapes
+        <d-math>B_p(\mathbf{\theta})</d-math>
+        correct these artifacts and also capture static soft-tissue deformations
+        caused by pose.
+      </p>
+
+      <p>
+        The shape and pose blend shapes are additively applied to the template
+        in the rest pose. This defines a function
+        <d-math> M(\mathbf{\beta}, \mathbf{\theta}; \Phi) </d-math>
+        that maps shape and pose parameters to a posed mesh, where
+        <d-math>\Phi</d-math> denotes the learned model parameters.
+      </p>
+
+      <section>
+        <h3>Blend Skinning Formulation</h3>
         <p>
-          Creating realistic animated human body models has been a long-standing
-          challenge in computer graphics. Linear Blend Skinning (LBS) is widely
-          used but produces artifacts such as the candy-wrapper effect.
+          To define notation and fix ideas, we describe the Linear Blend
+          Skinning (LBS) version of SMPL. The dual-quaternion variant only
+          differs in the skinning equation. Meshes and blend shapes are
+          represented as vectors of vertices, while individual vertices are
+          represented as 3D vectors.
         </p>
-      </d-section>
 
-      <d-section>
-        <h2>Model Overview</h2>
-
+        <h4>Pose Representation</h4>
         <p>
-          SMPL starts from a template mesh with
-          <d-math>N = 6890</d-math> vertices and
-          <d-math>K = 23</d-math> joints.
+          The human body is modeled using a kinematic tree with
+          <d-math>K = 23</d-math> joints. Each joint rotation is represented in
+          axis–angle form as
+          <d-math>\mathbf{\theta}_k \in \mathbb{R}^3</d-math>. The full pose
+          vector is given by
+          <d-math>\mathbf{\theta} \in \mathbb{R}^{72}</d-math>, including three
+          additional parameters for the global orientation.
         </p>
 
-        <ul>
-          <li>Single neutral template mesh</li>
-          <li>Fixed topology across identities</li>
-          <li>Compatible with standard animation pipelines</li>
-        </ul>
-      </d-section>
-
-      <d-section>
-        <h2>Mathematical Formulation</h2>
-
+        <h4>Axis–Angle to Rotation</h4>
         <p>
-          The mean template shape is
-          <d-math>\mathbf{T} \in \mathbb{R}^{3N}</d-math>.
-          Shape blend shapes are defined as:
+          Axis–angle vectors are converted to rotation matrices using Rodrigues’
+          formula:
         </p>
-
         <d-math block>
-          B_s(\boldsymbol{\beta}) : \mathbb{R}^{|\boldsymbol{\beta}|}
-          \rightarrow \mathbb{R}^{3N}
+          \exp(\hat{\mathbf{\omega}}) = \mathbf{I} + \frac{\sin
+          \|\mathbf{\omega}\|}{\|\mathbf{\omega}\|} \hat{\mathbf{\omega}} +
+          \frac{1 - \cos \|\mathbf{\omega}\|}{\|\mathbf{\omega}\|^2}
+          \hat{\mathbf{\omega}}^2
+        </d-math>
+
+        <h4>Linear Blend Skinning</h4>
+        <p>
+          Linear Blend Skinning maps vertices from the rest pose to the posed
+          configuration using a weighted combination of joint transformations.
+          The skinning function is defined as:
+        </p>
+        <d-math block>
+          W(\overline{\mathbf{T}}, \mathbf{J}, \mathbf{\theta}, \mathbf{W}) :
+          \mathbb{R}^{3N} \rightarrow \mathbb{R}^{3N}
+        </d-math>
+
+        <p>Each vertex is transformed as:</p>
+        <d-math block>
+          \overline{\mathbf{t}}_i' = \sum_{k=1}^{K} w_{k,i} \,
+          \mathbf{G}_k'(\mathbf{\theta}, \mathbf{J}) \overline{\mathbf{t}}_i
+        </d-math>
+
+        <p>The relative joint transformation is defined as:</p>
+        <d-math block>
+          \mathbf{G}_k'(\mathbf{\theta}, \mathbf{J}) =
+          \mathbf{G}_k(\mathbf{\theta}, \mathbf{J})
+          \mathbf{G}_k(\mathbf{\theta}^*, \mathbf{J})^{-1}
         </d-math>
 
         <p>
-          Pose-dependent corrections are captured by:
+          The global transformation of joint <d-math>k</d-math> is computed by
+          accumulating transformations along the kinematic chain:
         </p>
-
         <d-math block>
-          B_p(\boldsymbol{\theta}) :
-          \mathbb{R}^{|\boldsymbol{\theta}|} \rightarrow \mathbb{R}^{3N}
+          \mathbf{G}_k(\mathbf{\theta}, \mathbf{J}) = \prod_{j \in
+          \mathcal{A}(k)} \begin{bmatrix} \exp(\hat{\mathbf{\omega}}_j) &
+          \mathbf{j}_j \\ \mathbf{0}^T & 1 \end{bmatrix}
         </d-math>
-      </d-section>
 
-      <d-section>
-        <h2>Linear Blend Skinning</h2>
-
+        <h4>SMPL Modification to Skinning</h4>
+        <p>
+          SMPL introduces additive shape and pose-dependent deformations applied
+          in the rest pose. The posed template is defined as:
+        </p>
         <d-math block>
-          \mathbf{t}_i' =
-          \sum_{k=1}^{K} w_{k,i}
-          \mathbf{G}_k(\boldsymbol{\theta}, \mathbf{J})
-          \mathbf{t}_i
+          \mathbf{T}_p(\mathbf{\beta}, \mathbf{\theta}) = \bar{\mathbf{T}} +
+          B_s(\mathbf{\beta}) + B_p(\mathbf{\theta})
+        </d-math>
+
+        <p>The final SMPL model is then given by:</p>
+        <d-math block>
+          M(\mathbf{\beta}, \mathbf{\theta}; \Phi) =
+          W(\mathbf{T}_p(\mathbf{\beta}, \mathbf{\theta}),
+          \mathbf{J}(\mathbf{\beta}), \mathbf{\theta}, \mathbf{W})
+        </d-math>
+
+        <p>In per-vertex form:</p>
+        <d-math block>
+          \mathbf{t}_i' = \sum_{k=1}^{K} w_{k,i} \mathbf{G}_k(\mathbf{\theta},
+          \mathbf{J}(\mathbf{\beta})) \left( \mathbf{t}_i +
+          \mathbf{b}_{s,i}(\mathbf{\beta}) + \mathbf{b}_{p,i}(\mathbf{\theta})
+          \right)
         </d-math>
 
         <p>
-          SMPL preserves standard LBS and adds corrective deformations in the
-          rest pose, maintaining efficiency and compatibility.
+          This single line is essentially the "soul" of SMPL. Here is what each
+          part is doing:
         </p>
-      </d-section>
 
-      <d-section>
-        <h2>Conclusion</h2>
+        <table>
+          <thead>
+            <tr>
+              <th>Symbol</th>
+              <th>Meaning</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td><d-math>\mathbf{t}_i'</d-math></td>
+              <td>The final position of a specific vertex.</td>
+            </tr>
+            <tr>
+              <td><d-math>w_{k,i}</d-math></td>
+              <td>Skinning weights (how much each bone pulls on the vertex).</td>
+            </tr>
+            <tr>
+              <td><d-math>\mathbf{G}_k</d-math></td>
+              <td>The transformation of the <d-math>k</d-math>-th joint.</td>
+            </tr>
+            <tr>
+              <td><d-math>\mathbf{J}(\beta)</d-math></td>
+              <td>Joint locations (which change based on body shape).</td>
+            </tr>
+            <tr>
+              <td><d-math>\mathbf{b}_{s,i}(\beta)</d-math></td>
+              <td>Shape-dependent adjustment (the person's identity).</td>
+            </tr>
+            <tr>
+              <td><d-math>\mathbf{b}_{p,i}(\theta)</d-math></td>
+              <td>Pose-dependent adjustment (muscle bulge/cleanup).</td>
+            </tr>
+          </tbody>
+        </table>
+      </section>
 
-        <p>
-          SMPL achieves a balance between realism, efficiency, and usability by
-          learning pose-dependent deformations while retaining standard skinning
-          methods.
-        </p>
-      </d-section>
+      <h2>Breaking Down the Parameters</h2>
+      <p>
+        At its heart, SMPL is about simplification. Instead of trying to
+        calculate where every one of the 6,890 vertices should go, the model
+        gives us a way to control the entire body using two main sets of
+        numbers. You can think of it like a digital marionette: one set of
+        controls defines the "puppet" itself (how tall or wide it is), and the
+        other defines how the puppeteer moves its limbs.
+      </p>
 
+      <h3>Shape Parameters (<d-math>\beta</d-math>): The "Blueprint"</h3>
+      <p>
+        The shape parameters, represented by the vector
+        <d-math>\beta</d-math>, define the identity and anatomy of the body.
+        These numbers tell us who the person is, independent of how they are
+        standing or moving.
+      </p>
+      <ul>
+        <li>
+          <strong>What they control:</strong> General body proportions—height,
+          weight, shoulder width, or the length of the legs.
+        </li>
+        <li>
+          <strong>How they work:</strong> SMPL uses Principal Component Analysis
+          (PCA) learned from thousands of human scans. The first few
+          coefficients in <d-math>\beta</d-math> represent the most significant
+          variations in human shapes (like "tall vs. short" or "thin vs.
+          heavy").
+        </li>
+      </ul>
+
+      <h3>Pose Parameters (<d-math>\theta</d-math>): The "Action"</h3>
+      <p>
+        The pose parameters, <d-math>\theta</d-math>, define how the body is
+        currently positioned. This is the "extrinsic" configuration—how the
+        person is interacting with the space around them.
+      </p>
+      <ul>
+        <li>
+          <strong>What they control:</strong> The relative rotation of the 23
+          joints in the skeleton, plus the global orientation of the body.
+        </li>
+        <li>
+          <strong>The Math:</strong> Each joint's rotation is usually stored in
+          axis-angle format. For example, if you bend your elbow, the
+          corresponding <d-math>\theta</d-math> values for that joint change,
+          triggering the mesh to deform accordingly.
+        </li>
+      </ul>
+
+      <h3>Corrective Blend Shapes: The "Fine Detail"</h3>
+      <p>
+        While <d-math>\beta</d-math> and <d-math>\theta</d-math> do most of the
+        heavy lifting, a basic skeleton isn't enough to make a human look real.
+        When you bend your arm, your bicep bulges and the skin at your elbow
+        folds. If we used only standard skinning, the joint would just
+        "collapse" like a pinched straw.
+      </p>
+      <p>
+        SMPL fixes this using <strong>Pose-Dependent Blend Shapes</strong>.
+        These are small, learned adjustments that are added to the mesh
+        automatically based on the current pose (<d-math>\theta</d-math>). They
+        act as a "cleanup" pass, ensuring that muscles look natural and joints
+        don't lose volume when they bend.
+      </p>
+
+      <h2>Practical Applications</h2>
+      <p>
+        The real power of SMPL isn't just in the math; it's in how it bridges
+        the gap between abstract numbers and a complex 3D human body. By
+        boiling a person down to a few dozen parameters, we can do things that
+        were previously impossible or extremely slow.
+      </p>
+
+      <table>
+        <thead>
+          <tr>
+            <th>Area</th>
+            <th>How SMPL is used</th>
+            <th>The Benefit</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><strong>3D Modeling</strong></td>
+            <td>
+              Generating a full 3D mesh from minimal input, like a single 2D
+              photo or a few keypoints.
+            </td>
+            <td>Rapidly create thousands of diverse, realistic human figures.</td>
+          </tr>
+          <tr>
+            <td><strong>Pose Estimation</strong></td>
+            <td>
+              Using deep learning to "guess" the pose parameters
+              (<d-math>\theta</d-math>) from a video or image.
+            </td>
+            <td>
+              Computers can finally "understand" human posture and movement
+              from raw video.
+            </td>
+          </tr>
+          <tr>
+            <td><strong>Virtual Avatars</strong></td>
+            <td>
+              Animating characters by smoothly sliding between different
+              <d-math>\theta</d-math> states.
+            </td>
+            <td>
+              Expressive and believable digital characters for social VR and
+              telepresence.
+            </td>
+          </tr>
+          <tr>
+            <td><strong>Computer Vision</strong></td>
+            <td>
+              Reconstructing 3D human-object interactions in a standardized
+              format.
+            </td>
+            <td>
+              A common mathematical "language" for researchers to share data
+              and models.
+            </td>
+          </tr>
+          <tr>
+            <td><strong>Game Dev</strong></td>
+            <td>
+              Feeding parameters into game engines to generate dynamic meshes
+              in real-time.
+            </td>
+            <td>
+              Efficiently rendering complex, high-quality animations without
+              blowing the memory budget.
+            </td>
+          </tr>
+        </tbody>
+      </table>
+
+      <h2>Beyond the Body: SMPL-H and SMPL-X</h2>
+      <p>
+        The original SMPL model was a massive leap forward, but it had a few
+        "blind spots": it didn't include detailed hands or facial expressions.
+        Researchers quickly realized that to create truly believable digital
+        humans, we needed more than just a torso and limbs.
+      </p>
+
+      <ul>
+        <li>
+          <strong>SMPL-H</strong>: Added a detailed hand model with dozens of
+          new joints, allowing for realistic grasping and gestures.
+        </li>
+        <li>
+          <strong>SMPL-X</strong>: The current industry standard. It combines
+          SMPL (body), SMPL-H (hands), and FLAME (face) into one unified
+          framework.
+        </li>
+      </ul>
+
+      <table>
+        <thead>
+          <tr>
+            <th>Model</th>
+            <th>Total Joints</th>
+            <th>Focus Area</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><strong>SMPL</strong></td>
+            <td>24</td>
+            <td>Full body only.</td>
+          </tr>
+          <tr>
+            <td><strong>SMPL-H</strong></td>
+            <td>52</td>
+            <td>Body + Detailed hands.</td>
+          </tr>
+          <tr>
+            <td><strong>SMPL-X</strong></td>
+            <td>55+</td>
+            <td>Body + Hands + Face (FLAME).</td>
+          </tr>
+        </tbody>
+      </table>
+
+      <p>
+        Today, SMPL-X is the dominant choice for virtual avatars, social VR, and
+        telepresence. It allows us to capture not just how a person stands, but
+        how they talk and express themselves with their hands and face.
+      </p>
+
+      <h2>Shading and Rendering</h2>
+      <p>
+        Once the 3D geometry of the human body is generated by SMPL, the next
+        challenge is <strong>shading</strong>—determining how light interacts
+        with the surface to make it look realistic. In this project, we move
+        beyond simple "flat" colors to use techniques that mimic real-world
+        physics.
+      </p>
+
+      <h3>Gouraud Shading: The Legacy Approach</h3>
+      <p>
+        Named after Henri Gouraud, this is an "old-school" technique where
+        lighting is computed only at the <strong>vertices</strong> of a
+        triangle. The GPU then interpolates these colors across the surface.
+      </p>
+      <ul>
+        <li><strong>Cost:</strong> Very cheap and fast.</li>
+        <li>
+          <strong>Downside:</strong> Because lighting only exists at vertices,
+          specular highlights (the "shiny" spots) can disappear if they fall in
+          the middle of a triangle where no vertex exists.
+        </li>
+      </ul>
+      <p>
+        While common in the PS1 era and early OpenGL, Gouraud shading is rarely
+        used today except for extremely low-end hardware or specific stylized
+        looks.
+      </p>
+
+      <h3>Physically Based Rendering (PBR): The Modern Standard</h3>
+      <p>
+        PBR is not just a trick, but an entire framework designed to make
+        materials behave consistently under any lighting condition—whether at
+        sunset, under a flashlight, or in a studio. Unlike Gouraud, PBR
+        computes lighting for <strong>every single pixel</strong>
+        (per-fragment), allowing for much higher detail.
+      </p>
+
+      <table>
+        <thead>
+          <tr>
+            <th>Concept</th>
+            <th>Physical Meaning</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><strong>Energy Conservation</strong></td>
+            <td>A surface cannot reflect more light than it receives.</td>
+          </tr>
+          <tr>
+            <td><strong>Fresnel Effect</strong></td>
+            <td>Reflections become stronger at grazing angles.</td>
+          </tr>
+          <tr>
+            <td><strong>Microfacets</strong></td>
+            <td>Models microscopic roughness that blurs reflections.</td>
+          </tr>
+          <tr>
+            <td><strong>Metallic Workflow</strong></td>
+            <td>Distinguishes how metals and non-metals reflect light.</td>
+          </tr>
+        </tbody>
+      </table>
+
+      <h3>Ambient Occlusion: Adding Depth</h3>
+      <p>
+        Even with PBR, some areas can look unnaturally bright.
+        <strong>Ambient Occlusion (AO)</strong> simulates how much ambient light
+        reaches different parts of a surface. Surfaces tucked away in
+        folds—like the armpits, inner elbows, or deep skin creases—receive less
+        light and appear darker.
+      </p>
+      <p>
+        Without AO, ambient lighting is uniform, which often makes 3D models
+        look like "plastic" or floating. By adding AO, we ground the model in
+        its environment, providing the subtle shadows that define volume.
+      </p>
+
+      <table>
+        <thead>
+          <tr>
+            <th>Feature</th>
+            <th>Gouraud Shading</th>
+            <th>PBR (Modern)</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><strong>Lighting Frequency</strong></td>
+            <td>Per-vertex</td>
+            <td>Per-fragment (Per-pixel)</td>
+          </tr>
+          <tr>
+            <td><strong>Realism</strong></td>
+            <td>Low</td>
+            <td>High</td>
+          </tr>
+          <tr>
+            <td><strong>Performance Cost</strong></td>
+            <td>Very Low</td>
+            <td>High (GPU intensive)</td>
+          </tr>
+          <tr>
+            <td><strong>Specular Highlights</strong></td>
+            <td>Inaccurate / Can disappear</td>
+            <td>Physically accurate</td>
+          </tr>
+        </tbody>
+      </table>
+
+      <h3>Discussion</h3>
+      <p>
+        By retaining standard Linear Blend Skinning and learning corrective
+        blend shapes from data, SMPL achieves realistic pose-dependent
+        deformations while remaining compatible with existing animation
+        pipelines. This design choice allows the model to correct common
+        skinning artifacts without increasing runtime complexity.
+      </p>
     </d-article>
 
-    <!-- Appendix -->
     <d-appendix>
       <h3>Contributions</h3>
-      <p>Conceptualization and writing: Ajas Daison</p>
+      <p>Documentation structured according to Distill.pub v2 guidelines.</p>
     </d-appendix>
 
-    <!-- Footer -->
-    <d-footer></d-footer>
-
+    <distill-footer></distill-footer>
   </body>
 </html>
