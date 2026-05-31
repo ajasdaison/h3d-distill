@@ -14,6 +14,26 @@
       d-article h3 {
         margin-top: 1.5rem;
       }
+      .demo-container {
+        margin: 2rem 0;
+        border: 1px solid #ddd;
+        border-radius: 8px;
+        overflow: hidden;
+        background: #f9f9f9;
+      }
+      .demo-container iframe {
+        width: 100%;
+        height: 400px;
+        border: none;
+        display: block;
+      }
+      .demo-caption {
+        padding: 10px;
+        text-align: center;
+        font-size: 0.9rem;
+        color: #666;
+        border-top: 1px solid #ddd;
+      }
     </style>
   </head>
 
@@ -859,6 +879,105 @@
         telepresence. It allows us to capture not just how a person stands, but
         how they talk and express themselves with their hands and face.
       </p>
+
+      <h2>Interactive 3D Graphics</h2>
+      <p>
+        To visualize how 3D transformations and shaders work, we can look at two
+        interactive examples built with <strong>Three.js</strong>.
+      </p>
+
+      <h3>What is Three.js?</h3>
+      <p>
+        Three.js is a popular JavaScript library that simplifies working with
+        <strong>WebGL</strong> (Web Graphics Library). While WebGL is very
+        powerful, it is also very low-level, requiring hundreds of lines of code
+        just to draw a single triangle. Three.js provides a higher-level API,
+        handling scenes, cameras, geometries, and materials, making it much
+        easier to create complex 3D applications in the browser.
+      </p>
+
+      <div class="demo-container">
+        <iframe src="../graphics/threejs-cube/index.html"></iframe>
+        <div class="demo-caption">Demo 1: A simple Three.js cube with real-time scaling.</div>
+      </div>
+
+      <h3>The OpenGL Graphics Pipeline</h3>
+      <p>
+        The <strong>Graphics Pipeline</strong> is the sequence of steps that a
+        GPU takes to transform raw 3D data into the 2D image you see on your
+        screen. Each stage has a specific role in the rendering process:
+      </p>
+
+      <ol>
+        <li>
+          <strong>Vertex Data []:</strong> The input to the pipeline. This is a
+          collection of points (vertices) that define the 3D shapes. Each vertex
+          can carry attributes like 3D position, color, and texture coordinates.
+        </li>
+        <li>
+          <strong>Vertex Shader:</strong> The first programmable stage. It
+          processes each vertex individually, usually transforming its coordinates
+          from 3D space to the 2D coordinate system of your screen.
+        </li>
+        <li>
+          <strong>Shape Assembly:</strong> The GPU takes the transformed vertices
+          and connects them to form basic geometric shapes (primitives) like
+          triangles or lines.
+        </li>
+        <li>
+          <strong>Geometry Shader (Optional):</strong> An optional programmable
+          stage that can take a primitive (like a triangle) and modify it or
+          generate entirely new shapes on the fly.
+        </li>
+        <li>
+          <strong>Rasterization:</strong> The GPU takes the geometric shapes and
+          determines which pixels on your screen they cover. It produces
+          "fragments"—potential pixels that carry data to the next stage.
+        </li>
+        <li>
+          <strong>Fragment Shader:</strong> The second programmable stage. It
+          runs for every fragment produced by rasterization to determine its
+          final color. This is where complex lighting and texturing effects are
+          calculated.
+        </li>
+        <li>
+          <strong>Tests and Blending:</strong> The final stage. The GPU performs
+          various checks, such as the <strong>Depth Test</strong> (to see if one
+          object is hidden behind another) and <strong>Blending</strong> (to
+          handle transparency), before writing the final color to the pixel on
+          your screen.
+        </li>
+      </ol>
+
+      <h3>Understanding Shaders</h3>
+      <p>
+        In modern 3D graphics, <strong>shaders</strong> are small programs that
+        run directly on the Graphics Processing Unit (GPU). They are written in
+        a C-like language called <strong>GLSL</strong> (OpenGL Shading
+        Language). Shaders are what allow us to create complex effects like
+        the SMPL deformations discussed earlier.
+      </p>
+
+      <ul>
+        <li>
+          <strong>Vertex Shader:</strong> This shader runs once for every vertex
+          in your geometry. Its main job is to calculate the final 3D position
+          of that vertex on the screen. This is where transformations like
+          shearing, rotation, and the SMPL pose corrections happen.
+        </li>
+        <li>
+          <strong>Fragment (Pixel) Shader:</strong> After the vertex shader
+          positions the shape, the GPU figures out which pixels on the screen
+          it covers. The fragment shader runs once for each of these pixels. Its
+          job is to determine the final color of that pixel, taking into account
+          lighting, textures, and shadows.
+        </li>
+      </ul>
+
+      <div class="demo-container">
+        <iframe src="../graphics/sheer-cube/index.html"></iframe>
+        <div class="demo-caption">Demo 2: A GLSL Shear shader. The shearing transformation is happening inside the Vertex Shader.</div>
+      </div>
 
       <h2>Shading and Rendering</h2>
       <p>
