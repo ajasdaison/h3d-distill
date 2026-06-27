@@ -239,6 +239,187 @@
         <div class="svg-caption">Figure 2: Pipeline B - Hybrid WebGL GPU Skinning. Shape, joints, and pose-correctives are processed on the CPU in JS, but the expensive LBS skinning equation is executed in parallel on the GPU.</div>
       </div>
 
+      <h2>Application Lifecycle and Execution Flow</h2>
+      <p>
+        To orchestrate the rendering pipelines, the client application executes a highly synchronized sequence of events. Once the browser launches the page, a coordinated choreography takes place between three separate execution environments: JavaScript, the WebAssembly (WASM) virtual machine, and the WebGL graphics engine.
+      </p>
+      
+      <p>
+        Structuring the lifecycle is cleaner because the pipelines are identical up to a point, only diverging once the rendering and skinning decisions need to be made. Here is the architectural breakdown:
+      </p>
+
+      <!-- Section: Phase 1 -->
+      <div class="technical-note" style="border-left-color: var(--primary-color);">
+        <span class="timeline-phase-num" style="float: right;">Common Phase 1</span>
+        <h3 style="margin-top: 0; font-family: 'Outfit', sans-serif;">Scene Setup &amp; Asset Loading</h3>
+        <p style="font-style: italic; color: var(--text-muted); margin-bottom: 1.5rem;">Goal: Prepare the 3D environment and load all required assets asynchronously.</p>
+        
+        <ul style="padding-left: 1.25rem;">
+          <li style="margin-bottom: 1rem; color: var(--text-color);">
+            <strong>Create the 3D Scene:</strong> Three.js constructs the foundation of the 3D graphics environment instantly:
+            <div style="background: #f3f4f6; padding: 0.75rem 1.25rem; border-radius: 0.5rem; margin: 0.5rem 0; font-family: monospace; font-size: 0.9rem; border: 1px solid var(--surface-border); border-left: 3px solid var(--secondary-color); color: var(--text-color);">
+              Scene = the stage<br/>
+              Camera = the viewer<br/>
+              Renderer = the painter
+            </div>
+            It defines a global 3D space with a flat dark gray background and handles standard perspective calculations.
+          </li>
+          <li style="margin-bottom: 1rem; color: var(--text-color);">
+            <strong>Add Lighting:</strong> Two distinct light sources are added to establish visible depth and shadows:
+            <ul style="margin-top: 0.5rem; padding-left: 1.25rem;">
+              <li style="color: var(--text-muted); margin-bottom: 0.3rem;"><em style="color: var(--text-color); font-weight: 600;">Ambient Light:</em> Illuminates everything in the scene uniformly, replicating diffuse background room light.</li>
+              <li style="color: var(--text-muted);"><em style="color: var(--text-color); font-weight: 600;">Directional Light:</em> Placed at <code>(5, 5, 5)</code>, simulating a sharp sunlight source to produce visible shadows and physical depth highlights.</li>
+            </ul>
+          </li>
+          <li style="margin-bottom: 1rem; color: var(--text-color);">
+            <strong>Add Environment Reflections:</strong> Using <code>RoomEnvironment</code> combined with a PMREM (Prefiltered Mipmapped Radiance Transfer) generator, the renderer establishes realistic reflections. Without this environment mapping, the model material looks flat; with it, light reflects realistically, creating a smoother, metallic-like surface.
+          </li>
+          <li style="margin-bottom: 1rem; color: var(--text-color);">
+            <strong>Start Loading WASM Engine:</strong> The application invokes <code>createH3DModule()</code> to initialize the underlying C++ SMPL runtime within browser memory. Even in GPU mode, WASM must be loaded, as the backend parser and coordinate calculations rely on WebAssembly helper functions.
+          </li>
+          <li style="margin-bottom: 1rem; color: var(--text-color);">
+            <strong>Download Files in Parallel:</strong> The client triggers concurrent fetch requests for:
+            <ul style="margin-top: 0.5rem; padding-left: 1.25rem;">
+              <li style="color: var(--text-muted); font-family: 'Fira Code', monospace; margin-bottom: 0.3rem;">smpl_model.bin</li>
+              <li style="color: var(--text-muted); font-family: 'Fira Code', monospace;">sequence.bin</li>
+            </ul>
+            Downloading them together in parallel avoids sequential network bottlenecks, allowing the page to load significantly faster.
+          </li>
+        </ul>
+      </div>
+
+      <!-- Section: Phase 2 -->
+      <div class="technical-note" style="border-left-color: var(--primary-color); margin-top: 2rem;">
+        <span class="timeline-phase-num" style="float: right;">Common Phase 2</span>
+        <h3 style="margin-top: 0; font-family: 'Outfit', sans-serif;">Binary Parsing &amp; Data Preparation</h3>
+        <p style="font-style: italic; color: var(--text-muted); margin-bottom: 1.5rem;">Goal: Convert raw downloaded binary data into usable mathematical arrays.</p>
+        
+        <ul style="padding-left: 1.25rem;">
+          <li style="margin-bottom: 1rem; color: var(--text-color);">
+            <strong>Parse SMPL Binary:</strong> Using the <code>parseSMPLBinary()</code> routine, a JavaScript <code>DataView</code> wrapper scans the raw buffer byte-by-byte to extract:
+            <ul style="margin-top: 0.5rem; padding-left: 1.25rem;">
+              <li style="color: var(--text-muted); margin-bottom: 0.3rem;"><em style="color: var(--text-color); font-weight: 600;">Template Vertices:</em> The base neutral human template shape (\(T_{template}\), represented by the array <code>v_template</code> containing 6890 vertices).</li>
+              <li style="color: var(--text-muted); margin-bottom: 0.3rem;"><em style="color: var(--text-color); font-weight: 600;">Shape Blendshapes:</em> Body shape variations (\(S\), represented by the displacement array <code>shapedirs</code>) corresponding to the 10 shape parameters (\(\beta\)) like height, weight, and proportions.</li>
+              <li style="color: var(--text-muted); margin-bottom: 0.3rem;"><em style="color: var(--text-color); font-weight: 600;">Pose Blendshapes:</em> Pose-corrective displacements (\(P\), represented by the pose directions array <code>posedirs</code>) that resolve ugly mesh bending artifacts (e.g. ensuring elbows look natural when bent).</li>
+              <li style="color: var(--text-muted); margin-bottom: 0.3rem;"><em style="color: var(--text-color); font-weight: 600;">Skinning Weights:</em> The linear influence weights defining which bones affect each vertex (e.g., a shoulder vertex influenced 70% by the shoulder bone and 30% by the chest bone).</li>
+              <li style="color: var(--text-muted);"><em style="color: var(--text-color); font-weight: 600;">Joint Hierarchy:</em> Parent-child relations defining the skeletal skeleton nodes (e.g., <code>pelvis &rarr; spine &rarr; neck</code>).</li>
+            </ul>
+          </li>
+          <li style="margin-bottom: 1rem; color: var(--text-color);">
+            <strong>Write Model into WASM Filesystem:</strong> The application writes the model to Emscripten's virtual drive at <code>/model.bin</code> via <code>h3d.FS.writeFile()</code>, making it directly readable by the internal C++ runtime.
+          </li>
+          <li style="margin-bottom: 1rem; color: var(--text-color);">
+            <strong>Pre-allocate Memory Buffers:</strong> Memory buffers like <code>poseVec</code> and <code>betasVec</code> are created and pre-allocated once on the WASM heap. Reusing the same memory blocks avoids garbage collection sweeps, performance drops, and frame rate spikes.
+          </li>
+        </ul>
+      </div>
+
+      <!-- Section: Phase 3 -->
+      <div class="technical-note" style="border-left-color: var(--primary-color); margin-top: 2rem;">
+        <span class="timeline-phase-num" style="float: right;">Common Phase 3</span>
+        <h3 style="margin-top: 0; font-family: 'Outfit', sans-serif;">Skeleton &amp; Mesh Construction</h3>
+        <p style="font-style: italic; color: var(--text-muted); margin-bottom: 1.5rem;">Goal: Build the visible mesh geometry and set up its skeleton rig.</p>
+        
+        <ul style="padding-left: 1.25rem;">
+          <li style="margin-bottom: 1rem; color: var(--text-color);">
+            <strong>Create 24 Bones:</strong> Every joint defined in the SMPL model is mapped to a discrete <code>THREE.Bone()</code> object (e.g., pelvis, knee, elbow, neck).
+          </li>
+          <li style="margin-bottom: 1rem; color: var(--text-color);">
+            <strong>Build Hierarchy:</strong> These bone nodes are connected inside Three.js based on parent relationships, creating the kinematics skeleton rig.
+          </li>
+          <li style="margin-bottom: 1rem; color: var(--text-color);">
+            <strong>Set Bind Pose:</strong> The skeleton is initialized in its default resting state (T-pose) which serves as the reference coordinate frame.
+          </li>
+          <li style="margin-bottom: 1rem; color: var(--text-color);">
+            <strong>Reduce Bone Influences:</strong> The original SMPL model attributes 24 joint influences per vertex. However, WebGL shaders natively support a maximum of 4 influences. To guarantee GPU compatibility, JavaScript loops through all 6890 vertices, extracts the top 4 strongest bone weights, and normalizes them to sum to \(1.0\) before creating the WebGL geometry buffers.
+          </li>
+          <li style="margin-bottom: 1rem; color: var(--text-color);">
+            <strong>Create SkinnedMesh:</strong> The geometry, bone hierarchy, and bone weights are bundled together to instantiate a <code>THREE.SkinnedMesh()</code>, bringing the physical human model to life in the scene.
+          </li>
+        </ul>
+      </div>
+
+      <!-- Split Divider -->
+      <div style="background: linear-gradient(135deg, rgba(99, 102, 241, 0.08), rgba(6, 182, 212, 0.08)); border: 1px solid var(--surface-border); border-radius: 0.6rem; padding: 1.5rem 2rem; margin: 3rem 0; text-align: center; box-shadow: 0 4px 20px rgba(0, 0, 0, 0.02);">
+        <h3 style="margin: 0 0 0.5rem 0; color: var(--text-color); font-family: 'Outfit', sans-serif; font-weight: 700; letter-spacing: 0.05em; text-transform: uppercase;">
+          Pipeline Split Point
+        </h3>
+        <p style="margin: 0; color: var(--text-muted); font-size: 1.05rem;">
+          Up to this point, the CPU and GPU paths share the exact same setup. The pipeline now diverges based on the selected rendering backend.
+        </p>
+      </div>
+
+      <!-- Pipelines side-by-side -->
+      <div class="grid-2col" style="margin-bottom: 3rem; gap: 2rem;">
+        <!-- WASM CPU Path -->
+        <div class="technical-note" style="border-left-color: var(--accent-color); margin: 0; display: flex; flex-direction: column; justify-content: space-between;">
+          <div>
+            <span class="timeline-phase-num" style="float: right; background: rgba(236, 72, 153, 0.1); border-color: rgba(236, 72, 153, 0.2); color: var(--accent-color);">WASM (CPU) Path</span>
+            <h3 style="margin-top: 0; color: var(--text-color); font-family: 'Outfit', sans-serif;">Phase 4: Full CPU Solver</h3>
+            <p style="font-style: italic; color: var(--text-muted); font-size: 0.95rem; margin-bottom: 1.5rem;">Goal: The CPU computes all deformations, skinning, and lighting normals.</p>
+            
+            <ol style="padding-left: 1.25rem; font-size: 0.95rem; color: var(--text-color);">
+              <li style="margin-bottom: 0.75rem;"><strong>Parameters Change:</strong> The user alters joint sliders or the animation sequence progresses.</li>
+              <li style="margin-bottom: 0.75rem;"><strong>Write into WASM Heap:</strong> JavaScript copies the updated <code>pose</code> and <code>betas</code> arrays directly into the pre-allocated WASM heap buffers (<code>poseVec</code>, <code>betasVec</code>).</li>
+              <li style="margin-bottom: 0.75rem;"><strong>Execute C++ Solver:</strong> The app invokes <code>smplRuntime.update()</code> to run the full SMPL math loop: shape blendshapes, pose correctives, forward kinematics, vertex skinning, and normal calculations.</li>
+              <li style="margin-bottom: 0.75rem;"><strong>Copy Results Back:</strong> The calculated vertex positions and normals are pulled directly from WASM heap pointers and written to the WebGL geometry attributes.</li>
+              <li style="margin-bottom: 0.75rem;"><strong>GPU Draws Only:</strong> Three.js receives the modified buffers and renders the frame. The GPU handles display logic only; no skinning math is computed on the graphics card.</li>
+            </ol>
+          </div>
+        </div>
+
+        <!-- GPU Path -->
+        <div class="technical-note" style="border-left-color: var(--secondary-color); margin: 0; display: flex; flex-direction: column; justify-content: space-between;">
+          <div>
+            <span class="timeline-phase-num" style="float: right;">WebGL (GPU) Path</span>
+            <h3 style="margin-top: 0; color: var(--text-color); font-family: 'Outfit', sans-serif;">Phase 4: Hybrid GPU Skinning</h3>
+            <p style="font-style: italic; color: var(--text-muted); font-size: 0.95rem; margin-bottom: 1.5rem;">Goal: CPU deforms base shapes while the GPU handles skinning in parallel.</p>
+            
+            <ol style="padding-left: 1.25rem; font-size: 0.95rem; color: var(--text-color);">
+              <li style="margin-bottom: 0.75rem;"><strong>Parameters Change:</strong> Same as CPU path; inputs come from GUI sliders or sequence frames.</li>
+              <li style="margin-bottom: 0.75rem;"><strong>Partial CPU Solve:</strong> JavaScript calculates shape blendshapes (\(B_S(\beta)\)) and pose correctives (\(B_P(\theta)\)) on the CPU to deform the base vertices, but stops there (no skinning is performed).</li>
+              <li style="margin-bottom: 0.75rem;"><strong>Rotate Bones:</strong> JavaScript converts joint angles to quaternions and updates the skeleton bone transformations in Three.js.</li>
+              <li style="margin-bottom: 0.75rem;"><strong>Send to GPU:</strong> The bone matrices, skin indices, and weights are uploaded as uniforms to WebGL.</li>
+              <li style="margin-bottom: 0.75rem;"><strong>GPU Linear Blend Skinning:</strong> Inside the vertex shader, the GPU computes LBS in parallel across all vertices:
+                <div class="math-block" style="margin: 0.5rem 0; padding: 0.75rem; font-size: 1.1rem; background: rgba(243, 244, 246, 0.5);">
+                  \[v_i' = \sum_{k=1}^{4} w_{i, k} G_{b(i, k)} v_{i, \text{posed}}\]
+                </div>
+              </li>
+              <li style="margin-bottom: 0.75rem;"><strong>GPU Renders:</strong> The GPU deforms and draws the final body mesh, avoiding per-frame CPU-to-GPU vertex array copies.</li>
+            </ol>
+          </div>
+        </div>
+      </div>
+
+      <!-- Architectural Summary / Final Difference -->
+      <div class="technical-note" style="border-left-color: var(--primary-color); margin-top: 2rem; margin-bottom: 3rem;">
+        <h3 style="margin-top: 0; font-family: 'Outfit', sans-serif;">Architectural Divergence Summary</h3>
+        <p>
+          The fundamental distinction between the two paths lies in the division of labor. The point of divergence starts at: <strong>"Who performs skinning?"</strong>
+        </p>
+        <div class="grid-2col" style="margin: 1.5rem 0 0 0; gap: 2rem;">
+          <div>
+            <h4 style="margin: 0 0 0.5rem 0; color: var(--accent-color); font-family: 'Outfit', sans-serif;">WASM CPU Path (Full CPU Solve):</h4>
+            <p style="margin: 0 0 0.5rem 0; font-size: 0.95rem; color: var(--text-muted);">The CPU computes:</p>
+            <ul style="padding-left: 1.25rem; font-size: 0.95rem; margin: 0; color: var(--text-color);">
+              <li>Shape Blendshapes</li>
+              <li>Pose Correctives</li>
+              <li>Skeletal Transforms</li>
+              <li style="font-weight: 600; color: var(--primary-color);">Linear Blend Skinning</li>
+              <li style="font-weight: 600; color: var(--primary-color);">Vertex Normals</li>
+            </ul>
+          </div>
+          <div>
+            <h4 style="margin: 0 0 0.5rem 0; color: var(--secondary-color); font-family: 'Outfit', sans-serif;">WebGL GPU Path (Divided Labor):</h4>
+            <p style="margin: 0 0 0.5rem 0; font-size: 0.95rem; color: var(--text-muted);">The labor is divided between CPU and GPU:</p>
+            <ul style="padding-left: 1.25rem; font-size: 0.95rem; margin: 0; color: var(--text-color);">
+              <li><em style="color: var(--text-color); font-weight: 600;">CPU Computes:</em> Shape + Pose Correctives + Bone Rotations</li>
+              <li><em style="color: var(--text-color); font-weight: 600;">GPU Computes:</em> <strong>Skinning + Rendering</strong></li>
+            </ul>
+          </div>
+        </div>
+      </div>
+
       <h2>Performance Analysis &amp; Technical Trade-offs</h2>
       <p>
         Both approaches have unique bottlenecks that dictate their use cases. The table below outlines the core technical trade-offs between the WebAssembly and WebGL pipelines:
