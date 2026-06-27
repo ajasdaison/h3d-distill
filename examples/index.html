@@ -1,1110 +1,408 @@
 <!doctype html>
-<html>
+<html lang="en">
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>HUMANS 3D: SMPL Body Modeling</title>
+    <title>High-Performance Web-Based Character Animation: WebAssembly vs. WebGL GPU Skinning</title>
+    <meta name="description" content="A technical comparison of WebAssembly (CPU) and WebGL (GPU) rendering pipelines for the Skinned Multi-Person Linear (SMPL) body model on the web." />
 
-    <script src="https://distill.pub/template.v2.js"></script>
+    <!-- Distill-styled layout and styling overrides -->
+    <link rel="stylesheet" href="styles.css" />
 
-    <style>
-      d-article h2 {
-        margin-top: 2rem;
-      }
-      d-article h3 {
-        margin-top: 1.5rem;
-      }
-      .demo-container {
-        margin: 2rem 0;
-        border: 1px solid #ddd;
-        border-radius: 8px;
-        overflow: hidden;
-        background: #f9f9f9;
-      }
-      .demo-container iframe {
-        width: 100%;
-        height: 400px;
-        border: none;
-        display: block;
-      }
-      .demo-caption {
-        padding: 10px;
-        text-align: center;
-        font-size: 0.9rem;
-        color: #666;
-        border-top: 1px solid #ddd;
-      }
-    </style>
+    <!-- MathJax for rendering equations (no polyfill.io dependency) -->
+    <script id="MathJax-script" async src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js"></script>
   </head>
 
   <body>
-    <distill-header></distill-header>
+    <header class="distill-header" id="main-header">
+      <div class="header-content">
+        <a href="https://github.com/jerinphilip/h3d.cpp" class="logo">h3d.cpp</a>
+        <nav class="nav-links">
+          <a href="https://github.com/jerinphilip/h3d.cpp" target="_blank">Repository</a>
+          <a href="https://github.com/jerinphilip/h3d.cpp/tree/master/smpl-web" target="_blank">smpl-web</a>
+        </nav>
+      </div>
+    </header>
 
-    <d-front-matter>
-      <script id="distill-front-matter" type="text/json">
-        {
-          "title": "HUMANS 3D",
-          "description": "A technical breakdown of the SMPL body model and additive blend shapes.",
-          "published": "2026-01-30",
-          "authors": [
-            {
-              "author": "Author Name",
-              "authorURL": "#"
-            }
-          ]
-        }
-      </script>
-    </d-front-matter>
-
-    <d-title>
-      <h1>HUMANS 3D</h1>
-      <p>Data-driven human body representation using SMPL.</p>
+    <d-title id="article-title">
+      <h1>High-Performance Web-Based Character Animation</h1>
+      <div class="subtitle">WebAssembly vs. WebGL GPU Skinning for the SMPL Model</div>
     </d-title>
 
-    <d-byline></d-byline>
+    <d-byline id="article-byline">
+      <div class="byline-grid">
+        <div class="authors">
+          <h3>Authors</h3>
+          <p><a href="https://github.com/ajasdaison" target="_blank">Ajas Daison</a></p>
+        </div>
+        <div class="published">
+          <h3>Published</h3>
+          <p>June 26, 2026</p>
+        </div>
+      </div>
+    </d-byline>
 
-    <d-article>
-      <p>
-        Earlier 3D human body models mainly focused on representing different
-        body shapes but had difficulty handling realistic pose-related
-        deformations. Models such as SCAPE and its variants introduced
-        pose-dependent shape changes, but their complex formulations made
-        training difficult and computationally expensive. These models were also
-        less compatible with standard graphics pipelines, limiting their
-        practical use in real-time applications and animation systems.
-      </p>
-      <p>
-        To overcome these issues, the SMPL (Skinned Multi-Person Linear) model
-        was introduced as a data-driven and efficient human body representation.
-        It models both body shape differences and pose-dependent deformations
-        using a simple linear formulation based on joint rotations, making
-        training easier with large 3D datasets. Since SMPL is based on blend
-        skinning, it integrates well with existing rendering engines and
-        produces more accurate results than earlier models like BlendSCAPE.
-        Additionally, SMPL can simulate soft-tissue deformations, resulting in
-        more realistic human motion and making it widely used in current
-        research.
-      </p>
-
+    <d-article id="main-article">
       <h2>Introduction</h2>
       <p>
-        Creating realistic animated human body models has been a long-standing
-        challenge in computer graphics. Traditional commercial approaches rely
-        on manually rigging a mesh and sculpting many blend shapes to fix issues
-        in standard skinning methods. While effective, this process requires
-        significant manual effort and time. Linear Blend Skinning (LBS),
-        although widely supported by game engines and efficient to render, often
-        produces unrealistic joint deformations such as the “taffy” and “bowtie”
-        effects. Several improved skinning techniques have been proposed to
-        reduce these artifacts, but they either increase complexity or are not
-        widely compatible with existing graphics pipelines.
+        Deploying real-time human avatar capture and rendering applications usually requires a hefty Python-based machine learning stack. 
+        Libraries such as PyTorch, JAX, and CUDA are standard in research codebases, but they introduce major friction for deployment, particularly in client-side, real-time applications.
+      </p>
+      
+      <p>
+        The <a href="https://github.com/jerinphilip/h3d.cpp" target="_blank">h3d.cpp</a> project aims to consolidate performance capture on workstation-grade machines using C++ and LibTorch, skipping the heavy dependencies of Python. 
+        However, to bring these avatars to the web for interactive user experiences, we must solve a different problem: how to efficiently evaluate 
+        3D human body models like <strong>SMPL (Skinned Multi-Person Linear model)</strong> directly inside the browser.
+      </p>
+      
+      <p>
+        This article breaks down two distinct ways to solve this problem as implemented in <code>h3d.cpp</code>'s web frontend (<code>smpl-web</code>): 
+        a high-performance <strong>C++ WebAssembly (WASM) CPU engine</strong>, and a <strong>hybrid WebGL GPU pipeline</strong> utilizing Three.js.
+      </p>
+
+      <h2>The Mathematical Foundation of SMPL</h2>
+      <p>
+        To understand the rendering pipelines, we must first look at the mathematical formulations that define the shape and posture of the SMPL model. 
+        SMPL represents a human body as a template mesh \(T \in \mathbb{R}^{N \times 3}\) containing \(N = 6890\) vertices, controlled by shape parameters \(\beta\) (10 principal components) and pose parameters \(\theta\) (24 joints represented in axis-angle format, giving a 72-dimensional vector).
       </p>
 
       <p>
-        On the research side, many data-driven statistical body models have been
-        developed using 3D scans of people in different poses. These models can
-        capture body shape variations and pose-dependent deformations more
-        realistically, especially those based on deformation and triangle-based
-        representations. However, despite their realism, most of these methods
-        are not compatible with standard rendering engines or require
-        specialized pipelines. As a result, existing models often compromise
-        between realism, efficiency, compatibility, and ease of use. This gap
-        motivates the need for a body model that is both realistic and simple,
-        while remaining compatible with standard skinning methods used in modern
-        graphics software.
+        The transformation pipeline proceeds through four main mathematical steps:
       </p>
 
+      <h3>1. Shape Blend Shapes</h3>
       <p>
-        Recent human body modeling approaches focus on learning body shape and
-        pose deformations directly from 3D scan data. By aligning a common
-        template mesh to thousands of registered scans, models can be trained to
-        minimize vertex-level errors between the predicted body and real human
-        meshes. Datasets such as CAESAR have been widely used to learn
-        identity-based body shape variations using PCA, separately for male and
-        female bodies. Learning joint locations directly from body shape has
-        also proven important, as accurate joint regression is necessary to
-        produce natural pose-dependent deformations during animation.
+        The shape parameters \(\beta\) scale predefined directions of body variation (e.g., height, weight, proportions) to deform the template mesh:
       </p>
-
+      <div class="math-block" id="eq-shape-blend">
+        \[T_s(\beta) = T_{template} + B_S(\beta)\]
+      </div>
       <p>
-        To evaluate model performance, trained body models are commonly compared
-        with existing methods using both qualitative animations and quantitative
-        vertex error measurements on unseen test meshes. Comparisons with
-        deformation-based models like BlendSCAPE show that vertex-based skinned
-        models can achieve equal or better accuracy when trained on the same
-        data. Extensions of these models further improve realism by capturing
-        soft-tissue dynamics using temporal 3D data. By learning dynamic
-        deformations that depend on motion and body shape, such models can
-        simulate realistic muscle and fat movement while remaining compatible
-        with standard rendering engines.
+        where \(B_S(\beta) = \sum_{k=1}^{10} \beta_k S_k\) is the shape deformation vector, and \(S_k \in \mathbb{R}^{6890 \times 3}\) represent the shape principal component displacements.
       </p>
 
-      <h2>Motivation</h2>
+      <h3>2. Pose Blend Shapes</h3>
       <p>
-        Why do we even need SMPL? Before it came along, researchers and artists
-        had to choose between realism and speed. You could have a beautiful
-        model that took hours to render, or a fast one that looked like a
-        pinched balloon when it moved.
+        To avoid artifacts like the "collapsing elbow" during joint rotations, SMPL adds pose-dependent vertex offsets before skinning:
       </p>
-
-      <table>
-        <thead>
-          <tr>
-            <th>Model Type</th>
-            <th>The Problem</th>
-            <th>The SMPL Solution</th>
-          </tr>
-        </thead>
-        <tbody>
-          <tr>
-            <td><strong>SCAPE & Variants</strong></td>
-            <td>Realistic but slow and mathematically "heavy."</td>
-            <td>Keeps the realism but uses linear math.</td>
-          </tr>
-          <tr>
-            <td><strong>Basic Skeleton Rigs</strong></td>
-            <td>Joints collapse (the "taffy" effect) when bending.</td>
-            <td>Corrects joints with learned blend shapes.</td>
-          </tr>
-          <tr>
-            <td><strong>Raw Meshes</strong></td>
-            <td>Too many points to control manually (6,000+).</td>
-            <td>Reduces everything to just a few dozen numbers.</td>
-          </tr>
-          <tr>
-            <td><strong>Mocap Markers</strong></td>
-            <td>Expensive and hard to generalize to new bodies.</td>
-            <td>Works with any body shape or pose.</td>
-          </tr>
-        </tbody>
-      </table>
-
-      <h2>Related Work</h2>
+      <div class="math-block" id="eq-pose-blend">
+        \[T_p(\theta, \beta) = T_s(\beta) + B_P(\theta)\]
+      </div>
       <p>
-        Linear blend skinning and blend shapes are widely used in the animation
-        industry because they are simple, fast, and supported by most rendering
-        engines. In linear blend skinning (LBS), mesh vertices are influenced by
-        nearby bones using weighted transformations, but this often causes
-        unrealistic joint deformations. Many improved skinning techniques such
-        as quaternion, dual-quaternion, and spherical skinning have been
-        proposed to reduce these artifacts. However, these generic solutions
-        still tend to produce unnatural results and are not always practical for
-        real-world animation pipelines.
+        where \(B_P(\theta) = \sum_{n=1}^{207} (R_n(\theta) - R_n(\theta^*)) P_n\) is the pose-corrective offset vector, \(R_n(\theta)\) represents the local rotation matrix of joint \(n\), and \(P_n\) represents the pose-corrective displacements. The summation is over \(23 \text{ joints} \times 9 \text{ matrix elements} = 207\) dimensions.
       </p>
+
+      <h3>3. Joint Regression</h3>
       <p>
-        Auto-rigging methods have also been developed to automatically infer
-        skeletons, joints, and skinning weights from meshes, reducing manual
-        work. Despite this, most auto-rigging approaches do not learn corrective
-        blend shapes and therefore fail to fix common LBS issues or generalize
-        well to new poses. To address the limitations of basic skinning, blend
-        shape–based methods such as Pose Space Deformation (PSD) were
-        introduced, where pose-dependent corrections are added to a base mesh.
-        These methods rely on sculpted corrective shapes for specific poses and
-        interpolate between them using distance-based weighting functions.
+        The 3D locations of the 24 joints \(J(\beta)\) are regressed from the shaped mesh template:
       </p>
+      <div class="math-block" id="eq-joint-regression">
+        \[J(\beta) = \mathcal{J} T_s(\beta)\]
+      </div>
       <p>
-        Learning-based approaches later replaced manual sculpting by learning
-        pose-dependent deformations from registered 3D scans. However, many of
-        these methods either focus on limited body regions, require dense
-        training data, or become complex to control as the number of corrective
-        shapes increases. Other approaches attempt to improve realism by
-        increasing model complexity, such as learning deformation parameters
-        directly, adding extra bones, or over-parameterizing transformations and
-        then reducing them using PCA. Overall, existing approaches struggle to
-        balance realism, simplicity, and compatibility with industry-standard
-        animation pipelines.
+        where \(\mathcal{J} \in \mathbb{R}^{24 \times 6890}\) is a sparse regressor matrix learned from data.
       </p>
+
+      <h3>4. Linear Blend Skinning (LBS)</h3>
       <p>
-        Early human body modeling methods mainly focused on poseable models for
-        a single body shape and often used PCA to represent shape variation
-        without considering pose-dependent deformations. Later models such as
-        SCAPE introduced pose-dependent shape changes learned from 3D scans
-        using triangle-based deformations, allowing realistic combinations of
-        body shape and pose. However, these models are generally incompatible
-        with standard animation software.
+        Finally, the posed vertices are mapped to their world coordinates using joint transformations recursively computed along the kinematic tree:
       </p>
-      <h2>Model Formulation</h2>
+      <div class="math-block" id="eq-lbs">
+        \[v_i' = \sum_{j=1}^{24} w_{i, j} G_j(\theta, J(\beta)) v_{i, \text{posed}}\]
+      </div>
       <p>
-        At a high level, the SMPL pipeline takes simple inputs and converts
-        them into a complex, posed 3D mesh through a series of additive steps:
+        where \(w_{i, j}\) is the skinning weight defining the influence of joint \(j\) on vertex \(i\), and \(G_j(\theta, J(\beta)) \in \mathbb{R}^{4 \times 4}\) is the global transformation matrix of joint \(j\) computed by Forward Kinematics (FK).
       </p>
 
-      <ol>
-        <li>
-          <strong>Shape Input (<d-math>\beta</d-math>)</strong>: Choose the
-          body's proportions.
-        </li>
-        <li>
-          <strong>Template Generation</strong>: The base mesh is deformed to
-          match the identity.
-        </li>
-        <li>
-          <strong>Pose Corrections</strong>: Muscles bulge and skin folds based
-          on the target pose.
-        </li>
-        <li>
-          <strong>Articulation</strong>: The skeleton moves into position.
-        </li>
-        <li>
-          <strong>Linear Blend Skinning</strong>: The final mesh vertices are
-          calculated.
-        </li>
-      </ol>
-
-      <p>
-        Similar to SCAPE, SMPL decomposes human body shape into
-        identity-dependent shape variation and pose-dependent non-rigid
-        deformations. Unlike SCAPE, SMPL adopts a vertex-based skinning
-        formulation using corrective blend shapes.
-      </p>
-
-      <p>
-        The model starts from an artist-designed template mesh with
-        <d-math>N = 6890</d-math> vertices and <d-math>K = 23</d-math> joints.
-      </p>
-
-      <h3>Template Mesh</h3>
-      <ul>
-        <li>Starts from a single neutral body mesh</li>
-        <li>
-          Same topology for all people (identical topology for male and female
-          bodies)
-        </li>
-        <li>
-          Already rigged and segmented, making it compatible with standard
-          animation tools
-        </li>
-      </ul>
-
-      <p>
-        The template isn't just a random mesh; it's a carefully designed
-        topological map that stays consistent across every person the model
-        generates.
-      </p>
-
-      <table>
-        <thead>
-          <tr>
-            <th>Property</th>
-            <th>Value</th>
-          </tr>
-        </thead>
-        <tbody>
-          <tr>
-            <td>Vertices (<d-math>N</d-math>)</td>
-            <td>6,890</td>
-          </tr>
-          <tr>
-            <td>Faces</td>
-            <td>13,776</td>
-          </tr>
-          <tr>
-            <td>Joints (<d-math>K</d-math>)</td>
-            <td>23 (plus root)</td>
-          </tr>
-          <tr>
-            <td>Shape Parameters (<d-math>\beta</d-math>)</td>
-            <td>Typically 10 dimensions</td>
-          </tr>
-          <tr>
-            <td>Pose Parameters (<d-math>\theta</d-math>)</td>
-            <td>72 dimensions (24 joints &times; 3)</td>
-          </tr>
-        </tbody>
-      </table>
-
-      <p>SMPL is a parametric function that takes:</p>
-      <ul>
-        <li>
-          <strong>Shape parameters</strong> (<d-math>\mathbf{\beta}</d-math>)
-          &rarr; who the person is
-        </li>
-        <li>
-          <strong>Pose parameters</strong> (<d-math>\mathbf{\theta}</d-math>)
-          &rarr; how the person is moving
-        </li>
-      </ul>
-
-      <p>
-        The model consists of a mean template shape
-        <d-math>\mathbf{T} \in \mathbb{R}^{3N}</d-math>
-        defined in the rest pose, a blend weight matrix
-        <d-math>\mathbf{W} \in \mathbb{R}^{N \times K}</d-math>, a shape blend
-        shape function
-        <d-math
-          >B_s(\mathbf{\beta}) : \mathbb{R}^{|\mathbf{\beta}|} \rightarrow
-          \mathbb{R}^{3N}</d-math
-        >, a joint regressor
-        <d-math
-          >J(\mathbf{\beta}) : \mathbb{R}^{|\mathbf{\beta}|} \rightarrow
-          \mathbb{R}^{3K}</d-math
-        >, and a pose-dependent blend shape function
-        <d-math
-          >B_p(\mathbf{\theta}) : \mathbb{R}^{|\mathbf{\theta}|} \rightarrow
-          \mathbb{R}^{3N}</d-math
-        >.
-      </p>
-
-      <p>
-        The shape parameters <d-math>\mathbf{\beta}</d-math> control body
-        identity such as height, weight, and body proportions. Joint locations
-        are not fixed and depend on body shape, since different body types have
-        different joint placements.
-      </p>
-
-      <p>
-        Posing alone causes skinning artifacts such as joint collapse and the
-        candy-wrapper effect. Pose blend shapes
-        <d-math>B_p(\mathbf{\theta})</d-math>
-        correct these artifacts and also capture static soft-tissue deformations
-        caused by pose.
-      </p>
-
-      <p>
-        The shape and pose blend shapes are additively applied to the template
-        in the rest pose. This defines a function
-        <d-math> M(\mathbf{\beta}, \mathbf{\theta}; \Phi) </d-math>
-        that maps shape and pose parameters to a posed mesh, where
-        <d-math>\Phi</d-math> denotes the learned model parameters.
-      </p>
-
-      <section>
-        <h3>Blend Skinning Formulation</h3>
+      <div class="technical-note" id="note-lbs">
+        <h4>Linear Blend Skinning Constraints</h4>
         <p>
-          To define notation and fix ideas, we describe the Linear Blend
-          Skinning (LBS) version of SMPL. The dual-quaternion variant only
-          differs in the skinning equation. Meshes and blend shapes are
-          represented as vectors of vertices, while individual vertices are
-          represented as 3D vectors.
+          Each vertex in the SMPL model is typically influenced by multiple bones. To perform LBS efficiently, we restrict the influence to the top 4 most dominant joints per vertex and normalize their weights to sum to 1. This matches the native constraints of GPU hardware skinning engines.
         </p>
+      </div>
 
-        <h4>Pose Representation</h4>
-        <p>
-          The human body is modeled using a kinematic tree with
-          <d-math>K = 23</d-math> joints. Each joint rotation is represented in
-          axis–angle form as
-          <d-math>\mathbf{\theta}_k \in \mathbb{R}^3</d-math>. The full pose
-          vector is given by
-          <d-math>\mathbf{\theta} \in \mathbb{R}^{72}</d-math>, including three
-          additional parameters for the global orientation.
-        </p>
+      <h2>Two Rendering Philosophies on the Web</h2>
+      <p>
+        To implement these equations in a web browser, <code>h3d.cpp</code> provides two architectures inside the interactive viewer:
+      </p>
 
-        <h4>Axis–Angle to Rotation</h4>
-        <p>
-          Axis–angle vectors are converted to rotation matrices using Rodrigues’
-          formula:
-        </p>
-        <d-math block>
-          \exp(\hat{\mathbf{\omega}}) = \mathbf{I} + \frac{\sin
-          \|\mathbf{\omega}\|}{\|\mathbf{\omega}\|} \hat{\mathbf{\omega}} +
-          \frac{1 - \cos \|\mathbf{\omega}\|}{\|\mathbf{\omega}\|^2}
-          \hat{\mathbf{\omega}}^2
-        </d-math>
+      <div class="grid-2col" id="pipelines-comparison">
+        <div>
+          <h3>Pipeline A: WASM CPU Engine</h3>
+          <p>
+            This engine compiles the C++ SMPL implementation directly to WebAssembly using <strong>Emscripten</strong>. 
+            All steps—including Rodrigues rotation matrix computation, Shape Blend Shapes, Pose Blend Shapes, Forward Kinematics, Linear Blend Skinning, and Vertex Normal calculation—are executed in C++ on the CPU.
+          </p>
+          <p>
+            The JavaScript wrapper simply feeds the raw inputs (\(\beta, \theta\)) to the WASM memory space and copies the completed, fully-skinned vertices and normals directly into Three.js vertex buffer attributes (VBOs).
+          </p>
+        </div>
+        <div>
+          <h3>Pipeline B: Hybrid WebGL GPU</h3>
+          <p>
+            This pipeline distributes the computational load between the CPU (JavaScript) and the GPU (WebGL via Three.js's <code>SkinnedMesh</code>).
+          </p>
+          <p>
+            Shape deformations (\(B_S\)), joint regression (\(J\)), and pose-correctives (\(B_P\)) are calculated in JavaScript on the CPU. 
+            The resulting mesh coordinates are uploaded to the GPU as the base position attribute. The joint rotations (\(\theta\)) are updated in the skeleton's bone hierarchy. 
+            The actual LBS skinning equations are then executed in parallel on the GPU's hardware shaders.
+          </p>
+        </div>
+      </div>
 
-        <h4>Linear Blend Skinning</h4>
-        <p>
-          Linear Blend Skinning maps vertices from the rest pose to the posed
-          configuration using a weighted combination of joint transformations.
-          The skinning function is defined as:
-        </p>
-        <d-math block>
-          W(\overline{\mathbf{T}}, \mathbf{J}, \mathbf{\theta}, \mathbf{W}) :
-          \mathbb{R}^{3N} \rightarrow \mathbb{R}^{3N}
-        </d-math>
+      <div class="svg-container" id="wasm-pipeline-diagram">
+        <svg class="pipeline-svg" viewBox="0 0 800 240" fill="none" xmlns="http://www.w3.org/2000/svg">
+          <defs>
+            <pattern id="grid" width="20" height="20" patternUnits="userSpaceOnUse">
+              <path d="M 20 0 L 0 0 0 20" fill="none" stroke="rgba(255,255,255,0.03)" stroke-width="1"/>
+            </pattern>
+            <marker id="arrow" viewBox="0 0 10 10" refX="6" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+              <path d="M 0 1 L 10 5 L 0 9 z" fill="#6366f1"/>
+            </marker>
+            <marker id="arrow-cyan" viewBox="0 0 10 10" refX="6" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+              <path d="M 0 1 L 10 5 L 0 9 z" fill="#06b6d4"/>
+            </marker>
+          </defs>
+          <rect width="100%" height="100%" fill="url(#grid)" />
 
-        <p>Each vertex is transformed as:</p>
-        <d-math block>
-          \overline{\mathbf{t}}_i' = \sum_{k=1}^{K} w_{k,i} \,
-          \mathbf{G}_k'(\mathbf{\theta}, \mathbf{J}) \overline{\mathbf{t}}_i
-        </d-math>
+          <!-- Steps -->
+          <rect x="20" y="85" width="110" height="60" rx="6" fill="#1e293b" stroke="#334155" stroke-width="2"/>
+          <text x="75" y="112" fill="#f3f4f6" font-family="Outfit" font-size="13" font-weight="600" text-anchor="middle">Input States</text>
+          <text x="75" y="128" fill="#94a3b8" font-family="Outfit" font-size="11" text-anchor="middle">θ (72) &amp; β (10)</text>
 
-        <p>The relative joint transformation is defined as:</p>
-        <d-math block>
-          \mathbf{G}_k'(\mathbf{\theta}, \mathbf{J}) =
-          \mathbf{G}_k(\mathbf{\theta}, \mathbf{J})
-          \mathbf{G}_k(\mathbf{\theta}^*, \mathbf{J})^{-1}
-        </d-math>
+          <path d="M 130 115 L 160 115" stroke="#6366f1" stroke-width="2" marker-end="url(#arrow)"/>
 
-        <p>
-          The global transformation of joint <d-math>k</d-math> is computed by
-          accumulating transformations along the kinematic chain:
-        </p>
-        <d-math block>
-          \mathbf{G}_k(\mathbf{\theta}, \mathbf{J}) = \prod_{j \in
-          \mathcal{A}(k)} \begin{bmatrix} \exp(\hat{\mathbf{\omega}}_j) &
-          \mathbf{j}_j \\ \mathbf{0}^T & 1 \end{bmatrix}
-        </d-math>
+          <rect x="170" y="85" width="130" height="60" rx="6" fill="#1e1b4b" stroke="#3730a3" stroke-width="2"/>
+          <text x="235" y="112" fill="#f3f4f6" font-family="Outfit" font-size="13" font-weight="600" text-anchor="middle">HEAP Allocation</text>
+          <text x="235" y="128" fill="#818cf8" font-family="Outfit" font-size="11" text-anchor="middle">Copy to HEAPF64</text>
 
-        <h4>SMPL Modification to Skinning</h4>
-        <p>
-          SMPL introduces additive shape and pose-dependent deformations applied
-          in the rest pose. The posed template is defined as:
-        </p>
-        <d-math block>
-          \mathbf{T}_p(\mathbf{\beta}, \mathbf{\theta}) = \bar{\mathbf{T}} +
-          B_s(\mathbf{\beta}) + B_p(\mathbf{\theta})
-        </d-math>
+          <path d="M 300 115 L 330 115" stroke="#6366f1" stroke-width="2" marker-end="url(#arrow)"/>
 
-        <p>The final SMPL model is then given by:</p>
-        <d-math block>
-          M(\mathbf{\beta}, \mathbf{\theta}; \Phi) =
-          W(\mathbf{T}_p(\mathbf{\beta}, \mathbf{\theta}),
-          \mathbf{J}(\mathbf{\beta}), \mathbf{\theta}, \mathbf{W})
-        </d-math>
+          <rect x="340" y="45" width="190" height="135" rx="6" fill="#0f172a" stroke="#4f46e5" stroke-width="2"/>
+          <text x="435" y="70" fill="#f8fafc" font-family="Outfit" font-size="14" font-weight="700" text-anchor="middle">WASM C++ Engine</text>
+          <text x="435" y="95" fill="#cbd5e1" font-family="Outfit" font-size="11.5" text-anchor="middle">1. Blendshapes (Shape &amp; Pose)</text>
+          <text x="435" y="115" fill="#cbd5e1" font-family="Outfit" font-size="11.5" text-anchor="middle">2. Forward Kinematics (FK)</text>
+          <text x="435" y="135" fill="#cbd5e1" font-family="Outfit" font-size="11.5" text-anchor="middle">3. Linear Blend Skinning</text>
+          <text x="435" y="155" fill="#cbd5e1" font-family="Outfit" font-size="11.5" text-anchor="middle">4. Normal Estimator</text>
 
-        <p>In per-vertex form:</p>
-        <d-math block>
-          \mathbf{t}_i' = \sum_{k=1}^{K} w_{k,i} \mathbf{G}_k(\mathbf{\theta},
-          \mathbf{J}(\mathbf{\beta})) \left( \mathbf{t}_i +
-          \mathbf{b}_{s,i}(\mathbf{\beta}) + \mathbf{b}_{p,i}(\mathbf{\theta})
-          \right)
-        </d-math>
+          <path d="M 530 115 L 560 115" stroke="#06b6d4" stroke-width="2" marker-end="url(#arrow-cyan)"/>
 
-        <p>
-          This single line is essentially the "soul" of SMPL. Here is what each
-          part is doing:
-        </p>
+          <rect x="570" y="85" width="110" height="60" rx="6" fill="#062f4f" stroke="#0891b2" stroke-width="2"/>
+          <text x="625" y="112" fill="#f3f4f6" font-family="Outfit" font-size="13" font-weight="600" text-anchor="middle">WebGL Upload</text>
+          <text x="625" y="128" fill="#22d3ee" font-family="Outfit" font-size="11" text-anchor="middle">Write VBO Attributes</text>
 
-        <table>
+          <path d="M 680 115 L 710 115" stroke="#06b6d4" stroke-width="2" marker-end="url(#arrow-cyan)"/>
+
+          <rect x="720" y="85" width="60" height="60" rx="6" fill="#064e3b" stroke="#059669" stroke-width="2"/>
+          <text x="750" y="115" fill="#f3f4f6" font-family="Outfit" font-size="13" font-weight="600" text-anchor="middle">GPU</text>
+          <text x="750" y="128" fill="#34d399" font-family="Outfit" font-size="10" text-anchor="middle">Render</text>
+        </svg>
+        <div class="svg-caption">Figure 1: Pipeline A - C++ WebAssembly CPU Engine. The CPU calculates LBS skinning and normals, uploading the final deformed vertices to the GPU every frame.</div>
+      </div>
+
+      <div class="svg-container" id="gpu-pipeline-diagram">
+        <svg class="pipeline-svg" viewBox="0 0 800 240" fill="none" xmlns="http://www.w3.org/2000/svg">
+          <defs>
+            <marker id="arrow-pink" viewBox="0 0 10 10" refX="6" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+              <path d="M 0 1 L 10 5 L 0 9 z" fill="#ec4899"/>
+            </marker>
+          </defs>
+          <rect width="100%" height="100%" fill="url(#grid)" />
+
+          <!-- Steps -->
+          <rect x="20" y="85" width="110" height="60" rx="6" fill="#1e293b" stroke="#334155" stroke-width="2"/>
+          <text x="75" y="112" fill="#f3f4f6" font-family="Outfit" font-size="13" font-weight="600" text-anchor="middle">Input States</text>
+          <text x="75" y="128" fill="#94a3b8" font-family="Outfit" font-size="11" text-anchor="middle">θ (72) &amp; β (10)</text>
+
+          <path d="M 130 115 L 160 115" stroke="#ec4899" stroke-width="2" marker-end="url(#arrow-pink)"/>
+
+          <rect x="170" y="55" width="180" height="115" rx="6" fill="#3b0764" stroke="#701a75" stroke-width="2"/>
+          <text x="260" y="80" fill="#f3f4f6" font-family="Outfit" font-size="14" font-weight="700" text-anchor="middle">JavaScript CPU</text>
+          <text x="260" y="103" fill="#f5d0fe" font-family="Outfit" font-size="11" text-anchor="middle">1. Shape Blendshapes B_S(β)</text>
+          <text x="260" y="121" fill="#f5d0fe" font-family="Outfit" font-size="11" text-anchor="middle">2. Pose Correctives B_P(θ)</text>
+          <text x="260" y="139" fill="#f5d0fe" font-family="Outfit" font-size="11" text-anchor="middle">3. Joint Regressor J(β)</text>
+
+          <path d="M 350 115 L 380 115" stroke="#ec4899" stroke-width="2" marker-end="url(#arrow-pink)"/>
+
+          <rect x="390" y="65" width="180" height="95" rx="6" fill="#1e293b" stroke="#475569" stroke-width="2"/>
+          <text x="480" y="90" fill="#f3f4f6" font-family="Outfit" font-size="13" font-weight="600" text-anchor="middle">Data Upload to GPU</text>
+          <text x="480" y="112" fill="#94a3b8" font-family="Outfit" font-size="11" text-anchor="middle">1. Posed Base Vertices (v_posed)</text>
+          <text x="480" y="130" fill="#94a3b8" font-family="Outfit" font-size="11" text-anchor="middle">2. Skeleton Bone Matrices</text>
+
+          <path d="M 570 115 L 600 115" stroke="#06b6d4" stroke-width="2" marker-end="url(#arrow-cyan)"/>
+
+          <rect x="610" y="65" width="170" height="95" rx="6" fill="#022c22" stroke="#0f766e" stroke-width="2"/>
+          <text x="695" y="90" fill="#f3f4f6" font-family="Outfit" font-size="14" font-weight="700" text-anchor="middle">WebGL GPU Skinning</text>
+          <text x="695" y="112" fill="#34d399" font-family="Outfit" font-size="11" text-anchor="middle">GPU Linear Blend Skinning</text>
+          <text x="695" y="130" fill="#34d399" font-family="Outfit" font-size="11" text-anchor="middle">via THREE.SkinnedMesh</text>
+        </svg>
+        <div class="svg-caption">Figure 2: Pipeline B - Hybrid WebGL GPU Skinning. Shape, joints, and pose-correctives are processed on the CPU in JS, but the expensive LBS skinning equation is executed in parallel on the GPU.</div>
+      </div>
+
+      <h2>Performance Analysis &amp; Technical Trade-offs</h2>
+      <p>
+        Both approaches have unique bottlenecks that dictate their use cases. The table below outlines the core technical trade-offs between the WebAssembly and WebGL pipelines:
+      </p>
+
+      <div class="comparison-container" id="benchmark-comparison">
+        <table class="comparison-table">
           <thead>
             <tr>
-              <th>Symbol</th>
-              <th>Meaning</th>
+              <th>Evaluation Category</th>
+              <th>Pipeline A: WASM CPU Engine</th>
+              <th>Pipeline B: Hybrid WebGL GPU</th>
             </tr>
           </thead>
           <tbody>
             <tr>
-              <td><d-math>\mathbf{t}_i'</d-math></td>
-              <td>The final position of a specific vertex.</td>
+              <td><strong>Math Execution</strong></td>
+              <td>Entirely on CPU (compiled C++).</td>
+              <td>Hybrid: Blendshapes &amp; Regressor on CPU (JS); Skinning on GPU (Shaders).</td>
             </tr>
             <tr>
-              <td><d-math>w_{k,i}</d-math></td>
-              <td>Skinning weights (how much each bone pulls on the vertex).</td>
+              <td><strong>CPU-to-GPU Upload</strong></td>
+              <td>High: Uploads \(6890 \times 3\) coordinates and \(6890 \times 3\) normals every frame.</td>
+              <td>Low-Medium: Uploads skeleton matrices (\(24 \times 16\) floats) every frame. Base positions only upload when shape/pose parameters change.</td>
             </tr>
             <tr>
-              <td><d-math>\mathbf{G}_k</d-math></td>
-              <td>The transformation of the <d-math>k</d-math>-th joint.</td>
+              <td><strong>Performance (FPS)</strong></td>
+              <td>Bound by CPU compute power and JS-WASM serialization. Typically slower for active sequences.</td>
+              <td>Highly performant (solid 60 FPS) due to parallel GPU vertex transformation.</td>
             </tr>
             <tr>
-              <td><d-math>\mathbf{J}(\beta)</d-math></td>
-              <td>Joint locations (which change based on body shape).</td>
+              <td><strong>Multi-Avatar Scalability</strong></td>
+              <td><span class="cons">Poor:</span> Evaluating multiple characters quickly consumes CPU core cycles.</td>
+              <td><span class="pros">Excellent:</span> Multiple instances reuse static VBOs and execute shaders in parallel.</td>
             </tr>
             <tr>
-              <td><d-math>\mathbf{b}_{s,i}(\beta)</d-math></td>
-              <td>Shape-dependent adjustment (the person's identity).</td>
+              <td><strong>Codebase Synchronization</strong></td>
+              <td><span class="pros">Perfect:</span> Shares the exact C++ source code from <code>h3d.cpp</code> via bindings.</td>
+              <td><span class="cons">Duplicate:</span> Requires maintaining JavaScript ports of SMPL math calculations.</td>
             </tr>
             <tr>
-              <td><d-math>\mathbf{b}_{p,i}(\theta)</d-math></td>
-              <td>Pose-dependent adjustment (muscle bulge/cleanup).</td>
+              <td><strong>Pose Correctives Impact</strong></td>
+              <td>Low impact (evaluated in highly optimized C++ loops).</td>
+              <td>High impact: JS execution of pose-correctives requires iterating over \(O(N \times 207)\) elements.</td>
             </tr>
           </tbody>
         </table>
-      </section>
-
-      <h2>Breaking Down the Parameters</h2>
-      <p>
-        At its heart, SMPL is about simplification. Instead of trying to
-        calculate where every one of the 6,890 vertices should go, the model
-        gives us a way to control the entire body using two main sets of
-        numbers. You can think of it like a digital marionette: one set of
-        controls defines the "puppet" itself (how tall or wide it is), and the
-        other defines how the puppeteer moves its limbs.
-      </p>
-
-      <h3>Shape Parameters (<d-math>\beta</d-math>): The "Blueprint"</h3>
-      <p>
-        The shape parameters, represented by the vector
-        <d-math>\beta</d-math>, define the identity and anatomy of the body.
-        These numbers tell us who the person is, independent of how they are
-        standing or moving.
-      </p>
-
-      <p>
-        To understand where these 10 numbers come from, we have to look at how
-        SMPL was built. It wasn’t designed by an artist sculpting a “tall”
-        version and a “short” version. Instead, it was “learned” from thousands
-        of 3D scans of real people. The core engine behind this is
-        <strong>Principal Component Analysis (PCA)</strong>.
-      </p>
-
-      <h4>The Intuition Behind PCA</h4>
-      <p>
-        Think of PCA as a way to find the "natural rules" of human body variation.
-        It’s much easier to grasp if we break it down into four concepts:
-      </p>
-
-      <ol>
-        <li>
-          <strong>Variance:</strong> This measures how much a single variable
-          (like height) "spreads out" across a population. If everyone were
-          exactly 170cm tall, variance would be zero.
-          <d-math block>
-            Var(X) = \frac{1}{N} \sum_{i=1}^{N} (x_i - \mu)^2
-          </d-math>
-        </li>
-        <li>
-          <strong>Covariance:</strong> This studies how two variables move together.
-          Real-world data is captured in a **Covariance Matrix**, where the
-          diagonal entries are simply the variances of each individual feature,
-          and the off-diagonal entries show how features relate to one another.
-          <d-math block>
-            Cov(X, Y) = \frac{1}{N} \sum_{i=1}^{N} (x_i - \mu_X)(y_i - \mu_Y)
-          </d-math>
-        </li>
-        <li>
-          <strong>Eigenvectors:</strong> These are the "special directions"
-          hidden inside the data. Mathematically, an eigenvector
-          <d-math>\mathbf{v}</d-math> of a matrix <d-math>\mathbf{A}</d-math>
-          satisfies the equation <d-math>\mathbf{A}\mathbf{v} = \lambda\mathbf{v}</d-math>.
-          This means that when the matrix acts on the vector, its direction
-          remains unchanged—only its scale changes. In SMPL, the first
-          eigenvector is the direction of the single largest variation in human
-          body shape.
-        </li>
-        <li>
-          <strong>Eigenvalues:</strong> The value <d-math>\lambda</d-math> from
-          the equation above is the eigenvalue. It tells us how much "energy" or
-          variance exists along that eigenvector's direction. Large eigenvalues
-          represent dominant patterns, while small ones represent negligible
-          details.
-        </li>
-      </ol>
-
-      <d-figure style="grid-column: text;">
-        <svg viewBox="0 0 400 200" style="background: #f9f9f9; border-radius: 8px;">
-          <!-- Data Points -->
-          <circle cx="150" cy="100" r="2" fill="#888" opacity="0.5"/>
-          <circle cx="160" cy="90" r="2" fill="#888" opacity="0.5"/>
-          <circle cx="140" cy="110" r="2" fill="#888" opacity="0.5"/>
-          <circle cx="170" cy="80" r="2" fill="#888" opacity="0.5"/>
-          <circle cx="130" cy="120" r="2" fill="#888" opacity="0.5"/>
-          <circle cx="180" cy="70" r="2" fill="#888" opacity="0.5"/>
-          <circle cx="120" cy="130" r="2" fill="#888" opacity="0.5"/>
-          <circle cx="145" cy="95" r="2" fill="#888" opacity="0.5"/>
-          <circle cx="155" cy="105" r="2" fill="#888" opacity="0.5"/>
-          <!-- Eigenvectors -->
-          <line x1="100" y1="150" x2="200" y2="50" stroke="red" stroke-width="2" marker-end="url(#arrowhead)"/>
-          <text x="210" y="55" fill="red" font-family="sans-serif" font-size="12">1st Eigenvector (Main variation)</text>
-          <line x1="130" y1="80" x2="170" y2="120" stroke="blue" stroke-width="2" marker-end="url(#arrowhead)"/>
-          <text x="175" y="135" fill="blue" font-family="sans-serif" font-size="12">2nd Eigenvector</text>
-          <defs>
-            <marker id="arrowhead" markerWidth="10" markerHeight="7" refX="0" refY="3.5" orient="auto">
-              <polygon points="0 0, 10 3.5, 0 7" fill="context-stroke" />
-            </marker>
-          </defs>
-        </svg>
-        <figcaption>
-          Conceptual visualization: Eigenvectors reveal the hidden axes of
-          variation within a dataset. In SMPL, these become our "Shape Modes."
-        </figcaption>
-      </d-figure>
-
-      <h4>From PCA to Shape Sliders</h4>
-      <p>
-        Each human scan in the training set contains 6,890 vertices, or 20,670
-        numbers. By building a covariance matrix and computing its eigenvectors,
-        SMPL finds the top 10 most important directions of variation.
-      </p>
-      <p>
-        These eigenvectors become our <strong>Shape Basis</strong>. Instead of
-        moving 20,000 vertices manually, we just slide the 10
-        <d-math>\beta</d-math> coefficients.
-      </p>
-      <d-math block>
-        T(\beta) = \bar{T} + \sum_{n=1}^{10} \beta_n S_n
-      </d-math>
-      <p>
-        Where <d-math>\bar{T}</d-math> is the mean body and
-        <d-math>S_n</d-math> are the learned shape modes.
-      </p>
-
-      <h4>What do the 10 <d-math>\beta</d-math> parameters really mean?</h4>
-      <p>
-        A common misconception is that <d-math>\beta_1</d-math> is "Height" and
-        <d-math>\beta_2</d-math> is "Weight." While <d-math>\beta_1</d-math>
-        often affects overall size, they are actually **PCA coefficients**.
-      </p>
-      <p>
-        Because PCA is learned from real human data, a single slider often
-        changes multiple properties at once to keep the body realistic. If you
-        increase height, the model might also adjust arm length and shoulder
-        proportions automatically, because that's how real bodies are shaped.
-        This is why SMPL always looks like a "real person" no matter how you
-        set the sliders.
-      </p>
-
-      <h3>Pose Parameters (<d-math>\theta</d-math>): The "Action"</h3>
-      <p>
-        The pose parameters, <d-math>\theta</d-math>, define how the body is
-        currently positioned. This is the "extrinsic" configuration—how the
-        person is interacting with the space around them.
-      </p>
-
-      <h4>The Kinematic Tree: The Body's Hierarchy</h4>
-      <p>
-        In SMPL, the skeleton isn't just a list of joints; it's a **hierarchy** called a Kinematic Tree.
-        Every joint (except the root) has a "parent." When the parent moves, the child follows
-        automatically.
-      </p>
-
-      <d-figure style="grid-column: text;">
-        <svg viewBox="0 0 400 180" style="background: #f9f9f9; border-radius: 8px;">
-          <!-- Tree Structure -->
-          <g font-family="sans-serif" font-size="12" text-anchor="middle">
-            <rect x="160" y="20" width="80" height="30" rx="4" fill="#eee" stroke="#333"/>
-            <text x="200" y="40">Pelvis (Root)</text>
-
-            <path d="M200 50 L200 80" stroke="#333" fill="none"/>
-            <rect x="160" y="80" width="80" height="30" rx="4" fill="#eee" stroke="#333"/>
-            <text x="200" y="100">Spine</text>
-
-            <path d="M160 35 L100 80" stroke="#333" fill="none"/>
-            <rect x="60" y="80" width="80" height="30" rx="4" fill="#eee" stroke="#333"/>
-            <text x="100" y="100">Left Hip</text>
-
-            <path d="M100 110 L100 140" stroke="#333" fill="none"/>
-            <rect x="60" y="140" width="80" height="30" rx="4" fill="#eee" stroke="#333"/>
-            <text x="100" y="160">Left Knee</text>
-
-            <path d="M240 35 L300 80" stroke="#333" fill="none"/>
-            <rect x="260" y="80" width="80" height="30" rx="4" fill="#eee" stroke="#333"/>
-            <text x="300" y="100">Right Hip</text>
-          </g>
-        </svg>
-        <figcaption>
-          A simplified look at the Kinematic Tree. Each joint stores its parent's ID,
-          its offset (bone length), and its local rotation.
-        </figcaption>
-      </d-figure>
-
-      <p>
-        To keep track of this, each joint is stored as a simple data structure:
-      </p>
-      <pre><code>struct Joint {
-  int parent_id;      // Who do I follow?
-  vec3 offset;        // How far am I from my parent (bone length)?
-  quat local_rot;     // How am I rotated relative to my parent?
-}</code></pre>
-
-      <h4>Forward Kinematics (FK): Angles &rarr; Position</h4>
-      <p>
-        FK is the process of calculating where every joint is in 3D space based
-        on their rotation angles. It’s a "top-down" calculation.
-      </p>
-      <p>
-        Imagine a 2D arm: if you know the shoulder angle (<d-math>\theta_1</d-math>)
-        and the elbow angle (<d-math>\theta_2</d-math>), you can calculate
-        exactly where the wrist is using basic trigonometry. In 3D graphics, we do
-        this by multiplying "Global Transforms" down the chain:
-        <br>
-        <em>Global Transform = Parent Global Transform &times; Local Transform</em>
-      </p>
-
-      <h4>Inverse Kinematics (IK): Position &rarr; Angles</h4>
-      <p>
-        IK is the opposite—and much harder—problem. Instead of starting with
-        angles, you start with a **target position**.
-      </p>
-      <p>
-        Example: "I want the character's hand to touch this apple at coordinates
-        (x, y, z). What should the shoulder and elbow angles be?"
-      </p>
-      <ul>
-        <li><strong>FK:</strong> You move the sliders, and the hand moves.</li>
-        <li><strong>IK:</strong> You drag the hand, and the arm follows.</li>
-      </ul>
-      <p>
-        IK solvers are essential for things like VR (where the avatar's hands
-        must follow your controllers) or ensuring a character's feet stay
-        planted on uneven ground.
-      </p>
-
-      <d-figure style="grid-column: text;">
-        <svg viewBox="0 0 400 120" style="background: #f9f9f9; border-radius: 8px;">
-          <!-- FK/IK Diagram -->
-          <line x1="50" y1="60" x2="120" y2="30" stroke="#333" stroke-width="4"/>
-          <line x1="120" y1="30" x2="180" y2="70" stroke="#333" stroke-width="4"/>
-          <circle cx="50" cy="60" r="5" fill="red"/> <!-- Shoulder -->
-          <circle cx="120" cy="30" r="5" fill="red"/> <!-- Elbow -->
-          <circle cx="180" cy="70" r="5" fill="blue"/> <!-- Wrist -->
-
-          <text x="50" y="85" font-family="sans-serif" font-size="10" text-anchor="middle">Shoulder</text>
-          <text x="180" y="95" font-family="sans-serif" font-size="10" text-anchor="middle">Wrist (Target)</text>
-
-          <path d="M220 40 L280 40" stroke="#666" stroke-width="2" marker-end="url(#arrowhead)"/>
-          <text x="250" y="35" font-family="sans-serif" font-size="10" text-anchor="middle">FK: Angles &rarr; Pos</text>
-
-          <path d="M280 80 L220 80" stroke="#666" stroke-width="2" marker-end="url(#arrowhead)"/>
-          <text x="250" y="95" font-family="sans-serif" font-size="10" text-anchor="middle">IK: Pos &rarr; Angles</text>
-        </svg>
-      </d-figure>
-
-      <h3>Corrective Blend Shapes: The "Fine Detail"</h3>
-      <p>
-        While <d-math>\beta</d-math> and <d-math>\theta</d-math> do most of the
-        heavy lifting, a basic skeleton isn't enough to make a human look real.
-        When you bend your arm, your bicep bulges and the skin at your elbow
-        folds. If we used only standard skinning, the joint would just
-        "collapse" like a pinched straw.
-      </p>
-      <p>
-        SMPL fixes this using <strong>Pose-Dependent Blend Shapes</strong>.
-        These are small, learned adjustments that are added to the mesh
-        automatically based on the current pose (<d-math>\theta</d-math>). They
-        act as a "cleanup" pass, ensuring that muscles look natural and joints
-        don't lose volume when they bend.
-      </p>
-
-      <h2>Practical Applications</h2>
-      <p>
-        The real power of SMPL isn't just in the math; it's in how it bridges
-        the gap between abstract numbers and a complex 3D human body. By
-        boiling a person down to a few dozen parameters, we can do things that
-        were previously impossible or extremely slow.
-      </p>
-
-      <table>
-        <thead>
-          <tr>
-            <th>Area</th>
-            <th>How SMPL is used</th>
-            <th>The Benefit</th>
-          </tr>
-        </thead>
-        <tbody>
-          <tr>
-            <td><strong>3D Modeling</strong></td>
-            <td>
-              Generating a full 3D mesh from minimal input, like a single 2D
-              photo or a few keypoints.
-            </td>
-            <td>Rapidly create thousands of diverse, realistic human figures.</td>
-          </tr>
-          <tr>
-            <td><strong>Pose Estimation</strong></td>
-            <td>
-              Using deep learning to "guess" the pose parameters
-              (<d-math>\theta</d-math>) from a video or image.
-            </td>
-            <td>
-              Computers can finally "understand" human posture and movement
-              from raw video.
-            </td>
-          </tr>
-          <tr>
-            <td><strong>Virtual Avatars</strong></td>
-            <td>
-              Animating characters by smoothly sliding between different
-              <d-math>\theta</d-math> states.
-            </td>
-            <td>
-              Expressive and believable digital characters for social VR and
-              telepresence.
-            </td>
-          </tr>
-          <tr>
-            <td><strong>Computer Vision</strong></td>
-            <td>
-              Reconstructing 3D human-object interactions in a standardized
-              format.
-            </td>
-            <td>
-              A common mathematical "language" for researchers to share data
-              and models.
-            </td>
-          </tr>
-          <tr>
-            <td><strong>Game Dev</strong></td>
-            <td>
-              Feeding parameters into game engines to generate dynamic meshes
-              in real-time.
-            </td>
-            <td>
-              Efficiently rendering complex, high-quality animations without
-              blowing the memory budget.
-            </td>
-          </tr>
-        </tbody>
-      </table>
-
-      <h2>Beyond the Body: SMPL-H and SMPL-X</h2>
-      <p>
-        The original SMPL model was a massive leap forward, but it had a few
-        "blind spots": it didn't include detailed hands or facial expressions.
-        Researchers quickly realized that to create truly believable digital
-        humans, we needed more than just a torso and limbs.
-      </p>
-
-      <ul>
-        <li>
-          <strong>SMPL-H</strong>: Added a detailed hand model with dozens of
-          new joints, allowing for realistic grasping and gestures.
-        </li>
-        <li>
-          <strong>SMPL-X</strong>: The current industry standard. It combines
-          SMPL (body), SMPL-H (hands), and FLAME (face) into one unified
-          framework.
-        </li>
-      </ul>
-
-      <table>
-        <thead>
-          <tr>
-            <th>Model</th>
-            <th>Total Joints</th>
-            <th>Focus Area</th>
-          </tr>
-        </thead>
-        <tbody>
-          <tr>
-            <td><strong>SMPL</strong></td>
-            <td>24</td>
-            <td>Full body only.</td>
-          </tr>
-          <tr>
-            <td><strong>SMPL-H</strong></td>
-            <td>52</td>
-            <td>Body + Detailed hands.</td>
-          </tr>
-          <tr>
-            <td><strong>SMPL-X</strong></td>
-            <td>55+</td>
-            <td>Body + Hands + Face (FLAME).</td>
-          </tr>
-        </tbody>
-      </table>
-
-      <p>
-        Today, SMPL-X is the dominant choice for virtual avatars, social VR, and
-        telepresence. It allows us to capture not just how a person stands, but
-        how they talk and express themselves with their hands and face.
-      </p>
-
-      <h2>Interactive 3D Graphics</h2>
-      <p>
-        To visualize how 3D transformations and shaders work, we can look at two
-        interactive examples built with <strong>Three.js</strong>.
-      </p>
-
-      <h3>What is Three.js?</h3>
-      <p>
-        Three.js is a popular JavaScript library that simplifies working with
-        <strong>WebGL</strong> (Web Graphics Library). While WebGL is very
-        powerful, it is also very low-level, requiring hundreds of lines of code
-        just to draw a single triangle. Three.js provides a higher-level API,
-        handling scenes, cameras, geometries, and materials, making it much
-        easier to create complex 3D applications in the browser.
-      </p>
-
-      <div class="demo-container">
-        <iframe src="../graphics/threejs-cube/index.html"></iframe>
-        <div class="demo-caption">Demo 1: A simple Three.js cube with real-time scaling.</div>
       </div>
 
-      <h3>The OpenGL Graphics Pipeline</h3>
+      <h3>Memory and Bandwidth Overhead</h3>
       <p>
-        The <strong>Graphics Pipeline</strong> is the sequence of steps that a
-        GPU takes to transform raw 3D data into the 2D image you see on your
-        screen. Each stage has a specific role in the rendering process:
-      </p>
-
-      <ol>
-        <li>
-          <strong>Vertex Data []:</strong> The input to the pipeline. This is a
-          collection of points (vertices) that define the 3D shapes. Each vertex
-          can carry attributes like 3D position, color, and texture coordinates.
-        </li>
-        <li>
-          <strong>Vertex Shader:</strong> The first programmable stage. It
-          processes each vertex individually, usually transforming its coordinates
-          from 3D space to the 2D coordinate system of your screen.
-        </li>
-        <li>
-          <strong>Shape Assembly:</strong> The GPU takes the transformed vertices
-          and connects them to form basic geometric shapes (primitives) like
-          triangles or lines.
-        </li>
-        <li>
-          <strong>Geometry Shader (Optional):</strong> An optional programmable
-          stage that can take a primitive (like a triangle) and modify it or
-          generate entirely new shapes on the fly.
-        </li>
-        <li>
-          <strong>Rasterization:</strong> The GPU takes the geometric shapes and
-          determines which pixels on your screen they cover. It produces
-          "fragments"—potential pixels that carry data to the next stage.
-        </li>
-        <li>
-          <strong>Fragment Shader:</strong> The second programmable stage. It
-          runs for every fragment produced by rasterization to determine its
-          final color. This is where complex lighting and texturing effects are
-          calculated.
-        </li>
-        <li>
-          <strong>Tests and Blending:</strong> The final stage. The GPU performs
-          various checks, such as the <strong>Depth Test</strong> (to see if one
-          object is hidden behind another) and <strong>Blending</strong> (to
-          handle transparency), before writing the final color to the pixel on
-          your screen.
-        </li>
-      </ol>
-
-      <h3>Understanding Shaders</h3>
-      <p>
-        In modern 3D graphics, <strong>shaders</strong> are small programs that
-        run directly on the Graphics Processing Unit (GPU). They are written in
-        a C-like language called <strong>GLSL</strong> (OpenGL Shading
-        Language). Shaders are what allow us to create complex effects like
-        the SMPL deformations discussed earlier.
-      </p>
-
-      <ul>
-        <li>
-          <strong>Vertex Shader:</strong> This shader runs once for every vertex
-          in your geometry. Its main job is to calculate the final 3D position
-          of that vertex on the screen. This is where transformations like
-          shearing, rotation, and the SMPL pose corrections happen.
-        </li>
-        <li>
-          <strong>Fragment (Pixel) Shader:</strong> After the vertex shader
-          positions the shape, the GPU figures out which pixels on the screen
-          it covers. The fragment shader runs once for each of these pixels. Its
-          job is to determine the final color of that pixel, taking into account
-          lighting, textures, and shadows.
-        </li>
-      </ul>
-
-      <div class="demo-container">
-        <iframe src="../graphics/sheer-cube/index.html"></iframe>
-        <div class="demo-caption">Demo 2: A GLSL Shear shader. The shearing transformation is happening inside the Vertex Shader.</div>
-      </div>
-
-      <h2>Shading and Rendering</h2>
-      <p>
-        Once the 3D geometry of the human body is generated by SMPL, the next
-        challenge is <strong>shading</strong>—determining how light interacts
-        with the surface to make it look realistic. In this project, we move
-        beyond simple "flat" colors to use techniques that mimic real-world
-        physics.
-      </p>
-
-      <h3>Gouraud Shading: The Legacy Approach</h3>
-      <p>
-        Named after Henri Gouraud, this is an "old-school" technique where
-        lighting is computed only at the <strong>vertices</strong> of a
-        triangle. The GPU then interpolates these colors across the surface.
-      </p>
-      <ul>
-        <li><strong>Cost:</strong> Very cheap and fast.</li>
-        <li>
-          <strong>Downside:</strong> Because lighting only exists at vertices,
-          specular highlights (the "shiny" spots) can disappear if they fall in
-          the middle of a triangle where no vertex exists.
-        </li>
-      </ul>
-      <p>
-        While common in the PS1 era and early OpenGL, Gouraud shading is rarely
-        used today except for extremely low-end hardware or specific stylized
-        looks.
-      </p>
-
-      <h3>Physically Based Rendering (PBR): The Modern Standard</h3>
-      <p>
-        PBR is not just a trick, but an entire framework designed to make
-        materials behave consistently under any lighting condition—whether at
-        sunset, under a flashlight, or in a studio. Unlike Gouraud, PBR
-        computes lighting for <strong>every single pixel</strong>
-        (per-fragment), allowing for much higher detail.
-      </p>
-
-      <table>
-        <thead>
-          <tr>
-            <th>Concept</th>
-            <th>Physical Meaning</th>
-          </tr>
-        </thead>
-        <tbody>
-          <tr>
-            <td><strong>Energy Conservation</strong></td>
-            <td>A surface cannot reflect more light than it receives.</td>
-          </tr>
-          <tr>
-            <td><strong>Fresnel Effect</strong></td>
-            <td>Reflections become stronger at grazing angles.</td>
-          </tr>
-          <tr>
-            <td><strong>Microfacets</strong></td>
-            <td>Models microscopic roughness that blurs reflections.</td>
-          </tr>
-          <tr>
-            <td><strong>Metallic Workflow</strong></td>
-            <td>Distinguishes how metals and non-metals reflect light.</td>
-          </tr>
-        </tbody>
-      </table>
-
-      <h3>Ambient Occlusion: Adding Depth</h3>
-      <p>
-        Even with PBR, some areas can look unnaturally bright.
-        <strong>Ambient Occlusion (AO)</strong> simulates how much ambient light
-        reaches different parts of a surface. Surfaces tucked away in
-        folds—like the armpits, inner elbows, or deep skin creases—receive less
-        light and appear darker.
+        The main bottleneck of Pipeline A is the memory bandwidth between the WebAssembly memory heap (<code>HEAPF64</code>) and WebGL. 
+        Because Emscripten works within its own isolated memory space, the calculated floating-point coordinates must be copied into a JavaScript typed array before they can be uploaded to the GPU's Vertex Buffer Objects (VBOs).
       </p>
       <p>
-        Without AO, ambient lighting is uniform, which often makes 3D models
-        look like "plastic" or floating. By adding AO, we ground the model in
-        its environment, providing the subtle shadows that define volume.
+        In code, this data copying is visible in <code>smpl-web/src/main.js</code>:
+      </p>
+      
+      <pre><code class="language-javascript">// 1. Retrieve raw pointers from WASM Memory space
+const ptr = smplRuntime.getVerticesPtr();
+const numVertices = smplRuntime.getVerticesSize();
+
+// 2. Instantiate Float64 views directly on Emscripten's Heap
+const wasmBufferView = new Float64Array(
+  h3d.HEAPF64.buffer,
+  ptr,
+  numVertices * 3
+);
+
+// 3. Copy vertex data from WASM heap to JS Three.js buffer
+positions.set(wasmBufferView);
+state.geometry.attributes.position.needsUpdate = true;
+</code></pre>
+
+      <p>
+        This process generates substantial serialization overhead when running animations at 30 or 60 frames per second. 
+        Conversely, Pipeline B avoids per-frame mesh uploads. Once the base shape is configured (calculated when \(\beta\) changes), the mesh vertices remain static on the GPU. 
+        Only the 24 bone transformations (represented as 4&times;4 matrices or quaternions) are uploaded to WebGL uniforms on each frame:
       </p>
 
-      <table>
-        <thead>
-          <tr>
-            <th>Feature</th>
-            <th>Gouraud Shading</th>
-            <th>PBR (Modern)</th>
-          </tr>
-        </thead>
-        <tbody>
-          <tr>
-            <td><strong>Lighting Frequency</strong></td>
-            <td>Per-vertex</td>
-            <td>Per-fragment (Per-pixel)</td>
-          </tr>
-          <tr>
-            <td><strong>Realism</strong></td>
-            <td>Low</td>
-            <td>High</td>
-          </tr>
-          <tr>
-            <td><strong>Performance Cost</strong></td>
-            <td>Very Low</td>
-            <td>High (GPU intensive)</td>
-          </tr>
-          <tr>
-            <td><strong>Specular Highlights</strong></td>
-            <td>Inaccurate / Can disappear</td>
-            <td>Physically accurate</td>
-          </tr>
-        </tbody>
-      </table>
+      <pre><code class="language-javascript">// Update bone rotations on CPU in JS
+const axis = new THREE.Vector3();
+for (let i = 0; i &lt; 24; i++) {
+  const rx = pose[i * 3 + 0];
+  const ry = pose[i * 3 + 1];
+  const rz = pose[i * 3 + 2];
+  const theta = Math.sqrt(rx * rx + ry * ry + rz * rz);
+  if (theta &lt; 1e-8) {
+    bones[i].quaternion.set(0, 0, 0, 1);
+  } else {
+    axis.set(rx / theta, ry / theta, rz / theta);
+    bones[i].quaternion.setFromAxisAngle(axis, theta);
+  }
+}
+// SkinnedMesh automatically updates uniform arrays for GPU skinning
+</code></pre>
 
-      <h3>Discussion</h3>
+      <h3>The Pose Correctives Bottleneck</h3>
       <p>
-        By retaining standard Linear Blend Skinning and learning corrective
-        blend shapes from data, SMPL achieves realistic pose-dependent
-        deformations while remaining compatible with existing animation
-        pipelines. This design choice allows the model to correct common
-        skinning artifacts without increasing runtime complexity.
+        While Pipeline B (GPU) excels at standard skinning, the addition of pose-corrective blend shapes (\(B_P(\theta)\)) introduces a CPU bottleneck in JavaScript. 
+        The pose-corrective calculation involves multiplying a 207-dimensional vector (describing the joint orientations) by a large dense matrix of pose directions (\(posedirs\)) for all 6890 vertices.
+      </p>
+      <p>
+        In JavaScript, this requires a loop over all vertices, which is significantly slower than compiled C++ executed in WASM:
+      </p>
+
+      <pre><code class="language-javascript">function updatePoseOffsets(poseFeature, posedirs, out_offsets) {
+  const numVertices = 6890;
+  // Optimize by only processing dimensions with non-zero coefficients
+  const activeDims = [];
+  for (let m = 0; m &lt; 207; m++) {
+    const coeff = poseFeature[m];
+    if (Math.abs(coeff) &gt; 1e-6) {
+      activeDims.push({ dim: m, coeff });
+    }
+  }
+
+  const numActive = activeDims.length;
+  if (numActive === 0) {
+    out_offsets.fill(0);
+    return;
+  }
+
+  for (let i = 0; i &lt; numVertices; i++) {
+    let ox = 0, oy = 0, oz = 0;
+    const pBase = i * 3 * 207;
+    for (let d = 0; d &lt; numActive; d++) {
+      const active = activeDims[d];
+      ox += active.coeff * posedirs[pBase + 0 * 207 + active.dim];
+      oy += active.coeff * posedirs[pBase + 1 * 207 + active.dim];
+      oz += active.coeff * posedirs[pBase + 2 * 207 + active.dim];
+    }
+    out_offsets[i * 3 + 0] = ox;
+    out_offsets[i * 3 + 1] = oy;
+    out_offsets[i * 3 + 2] = oz;
+  }
+}
+</code></pre>
+      <p>
+        When pose correctives are enabled in Pipeline B, the CPU must compute these offsets and upload the updated vertex buffers to the GPU every frame. 
+        This reintroduces the VBO upload overhead that GPU skinning was designed to solve, highlighting the classic trade-off between mathematical precision and web performance.
+      </p>
+
+      <h2>Conclusion</h2>
+      <p>
+        The <code>h3d.cpp</code> project's exploration of web rendering techniques demonstrates that there is no one-size-fits-all solution for real-time character animation. 
+        WebAssembly provides a robust, zero-maintenance mechanism to share complex model math directly with high-performance desktop implementations, but faces scaling limits due to browser memory architectures and CPU-GPU bandwidth. 
+        Conversely, hybrid GPU skinning offers fluid performance for crowds and avatars, but requires careful optimizations to avoid JavaScript-based CPU bottlenecks when computing complex body deformations like pose-dependent correctives.
       </p>
     </d-article>
 
-    <d-appendix>
+    <d-appendix id="article-appendix">
       <h3>Contributions</h3>
-      <p>Documentation structured according to Distill.pub v2 guidelines.</p>
+      <p>
+        Documentation and architectural review provided by the <code>h3d.cpp</code> development team. 
+        Detailed SMPL algorithms can be referenced in <a href="file:///Users/ajasdaison/projects/h3d.cpp/h3d/SMPLModel.cc">h3d/SMPLModel.cc</a>, 
+        WebAssembly interface bindings in <a href="file:///Users/ajasdaison/projects/h3d.cpp/h3d/WasmBindings.cc">h3d/WasmBindings.cc</a>, 
+        and client integration scripts in <a href="file:///Users/ajasdaison/projects/h3d.cpp/smpl-web/src/main.js">smpl-web/src/main.js</a>.
+      </p>
     </d-appendix>
 
-    <distill-footer></distill-footer>
+    <footer class="distill-footer" id="main-footer">
+      <div class="footer-content">
+      </div>
+    </footer>
   </body>
 </html>
