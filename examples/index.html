@@ -29,7 +29,7 @@
       filter: brightness(1.2);
     }
     .interactive-step.active rect {
-      stroke: #ffffff !important;
+      stroke: #6366f1 !important;
       stroke-width: 3px !important;
     }
 
@@ -242,10 +242,10 @@
     </div>
 
     <figure class="l-page" id="wasm-pipeline-diagram" style="margin: 2rem 0;">
-      <svg class="pipeline-svg" viewBox="0 0 800 240" fill="none" xmlns="http://www.w3.org/2000/svg" style="width: 100%; height: auto; background: #0f172a; border-radius: 6px;">
+      <svg class="pipeline-svg" viewBox="0 0 800 240" fill="none" xmlns="http://www.w3.org/2000/svg" style="width: 100%; height: auto; background: #ffffff; border: 1px solid rgba(0, 0, 0, 0.08); border-radius: 6px;">
         <defs>
           <pattern id="grid" width="20" height="20" patternUnits="userSpaceOnUse">
-            <path d="M 20 0 L 0 0 0 20" fill="none" stroke="rgba(255,255,255,0.03)" stroke-width="1"/>
+            <path d="M 20 0 L 0 0 0 20" fill="none" stroke="rgba(0, 0, 0, 0.05)" stroke-width="1"/>
           </pattern>
           <marker id="arrow" viewBox="0 0 10 10" refX="6" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
             <path d="M 0 1 L 10 5 L 0 9 z" fill="#6366f1"/>
@@ -302,17 +302,17 @@
     </figure>
 
     <figure class="l-page" id="gpu-pipeline-diagram" style="margin: 2rem 0;">
-      <svg class="pipeline-svg" viewBox="0 0 800 240" fill="none" xmlns="http://www.w3.org/2000/svg" style="width: 100%; height: auto; background: #0f172a; border-radius: 6px;">
+      <svg class="pipeline-svg" viewBox="0 0 800 240" fill="none" xmlns="http://www.w3.org/2000/svg" style="width: 100%; height: auto; background: #ffffff; border: 1px solid rgba(0, 0, 0, 0.08); border-radius: 6px;">
         <defs>
           <pattern id="grid2" width="20" height="20" patternUnits="userSpaceOnUse">
-            <path d="M 20 0 L 0 0 0 20" fill="none" stroke="rgba(255,255,255,0.03)" stroke-width="1"/>
+            <path d="M 20 0 L 0 0 0 20" fill="none" stroke="rgba(0, 0, 0, 0.05)" stroke-width="1"/>
           </pattern>
           <marker id="arrow-cyan2" viewBox="0 0 10 10" refX="6" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
             <path d="M 0 1 L 10 5 L 0 9 z" fill="#06b6d4"/>
-          </pattern>
+          </marker>
           <marker id="arrow-pink" viewBox="0 0 10 10" refX="6" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
             <path d="M 0 1 L 10 5 L 0 9 z" fill="#ec4899"/>
-          </pattern>
+          </marker>
         </defs>
         <rect width="100%" height="100%" fill="url(#grid2)" />
 
@@ -342,6 +342,8 @@
           <text x="480" y="130" fill="#94a3b8" font-family="sans-serif" font-size="11" text-anchor="middle">2. Skeleton Bone Matrices</text>
         </g>
 
+        <path d="M 570 115 L 600 115" stroke="#06b6d4" stroke-width="2" marker-end="url(#arrow-cyan2)"/>
+
         <g class="interactive-step" data-step="gpu-engine">
           <rect x="610" y="65" width="170" height="95" rx="6" fill="#022c22" stroke="#0f766e" stroke-width="2"/>
           <text x="695" y="90" fill="#f3f4f6" font-family="sans-serif" font-size="14" font-weight="700" text-anchor="middle">WebGL(GPU) Engine</text>
@@ -369,13 +371,7 @@
     </div>
 
     <script>
-      document.addEventListener("DOMContentLoaded", function() {
-        const detailBox = document.getElementById("lifecycle-detail-box");
-        const detailTitle = document.getElementById("detail-title");
-        const detailBody = document.getElementById("detail-body");
-        const instruction = document.getElementById("walkthrough-instruction");
-        const steps = document.querySelectorAll(".interactive-step");
-
+      (function() {
         const stepData = {
           "input-states": {
             title: "1. Scene Setup, Asset Loading & Kinematics Rig Setup",
@@ -441,30 +437,40 @@
                      <li><strong>Uniform Uploads:</strong> Every frame, uploads only the bone matrices (<d-math>24 \\times 16</d-math> floats) and lightweight array coefficients (10 betas and 207 pose features). This represents a fraction of the bandwidth required for full coordinate uploads.</li>
                    </ul>`
           },
-          "gpu-engine": {
-            title: "Pipeline B: GPU Texture-Based Displacement & Parallel Skinning",
-            body: `<p><strong>Systems Goal:</strong> Evaluate shape blending, pose correctives, and Linear Blend Skinning in parallel on the GPU vertex shader.</p>
-                   <ul>
-                     <li><strong>Texture Loading (Init):</strong> Displacement tables for shape (<code>u_shapedirsTexture</code>, <d-math>6890 \times 10</d-math> floats) and pose (<code>u_posedirsTexture</code>, <d-math>6890 \times 207</d-math> floats) are loaded once into GPU VRAM as 2D textures. This is necessary because WebGL 2 enforces `MAX_VERTEX_UNIFORM_VECTORS` (typically 256 or 1024 float vectors), which is far too small for the SMPL displacements.</li>
-                     <li><strong>Vertex Shader Texture Fetch:</strong> For each vertex, the shader uses <code>texelFetch</code> with its index (<code>a_vertexIndex</code>) to extract shape and pose corrective offsets.</li>
-                     <li><strong>Parallel Accumulation &amp; Skinning:</strong> Adds offsets to the base template and performs parallel skinning:
-                       <d-math block>v_i' = \\sum_{k=1}^{4} w_{i, k} G_{b(i, k)} (v_{i, \\text{template}} + \\text{shapeOffset}_i + \\text{poseOffset}_i)</d-math>
-                       This takes advantage of parallel GPU cores and completely offloads vertex-level execution from the CPU.</li>
-                   </ul>`
-          }
+            "gpu-engine": {
+              title: "Pipeline B: GPU Texture-Based Displacement & Parallel Skinning",
+              body: `<p><strong>Systems Goal:</strong> Evaluate shape blending, pose correctives, and Linear Blend Skinning in parallel on the GPU vertex shader.</p>
+                     <ul>
+                       <li><strong>Texture Loading (Init):</strong> Displacement tables for shape (<code>u_shapedirsTexture</code>, <d-math>6890 \times 10</d-math> floats) and pose (<code>u_posedirsTexture</code>, <d-math>6890 \times 207</d-math> floats) are loaded once into GPU VRAM as 2D textures. This is necessary because WebGL 2 enforces <code>MAX_VERTEX_UNIFORM_VECTORS</code> (typically 256 or 1024 float vectors), which is far too small for the SMPL displacements.</li>
+                       <li><strong>Vertex Shader Texture Fetch:</strong> For each vertex, the shader uses <code>texelFetch</code> with its index (<code>a_vertexIndex</code>) to extract shape and pose corrective offsets.</li>
+                       <li><strong>Parallel Accumulation &amp; Skinning:</strong> Adds offsets to the base template and performs parallel skinning:
+                         <d-math block>v_i' = \\sum_{k=1}^{4} w_{i, k} G_{b(i, k)} (v_{i, \\text{template}} + \\text{shapeOffset}_i + \\text{poseOffset}_i)</d-math>
+                         This takes advantage of parallel GPU cores and completely offloads vertex-level execution from the CPU.</li>
+                     </ul>`
+            }
         };
 
-        steps.forEach(step => {
-          step.addEventListener("click", function() {
-            const stepKey = this.getAttribute("data-step");
-            const data = stepData[stepKey];
-            if (!data) return;
+        // Attach event delegation directly to document to persist through layout rewrites
+        document.addEventListener("click", function(event) {
+          const stepElement = event.target.closest(".interactive-step");
+          if (!stepElement) return;
 
-            // Update active states in SVGs
-            steps.forEach(s => s.classList.remove("active"));
-            document.querySelectorAll(`[data-step="${stepKey}"]`).forEach(s => s.classList.add("active"));
+          const stepKey = stepElement.getAttribute("data-step");
+          const data = stepData[stepKey];
+          if (!data) return;
 
-            // Populate content
+          // Update active states in SVGs
+          const allSteps = document.querySelectorAll(".interactive-step");
+          allSteps.forEach(s => s.classList.remove("active"));
+          document.querySelectorAll(`[data-step="${stepKey}"]`).forEach(s => s.classList.add("active"));
+
+          // Populate content
+          const detailBox = document.getElementById("lifecycle-detail-box");
+          const detailTitle = document.getElementById("detail-title");
+          const detailBody = document.getElementById("detail-body");
+          const instruction = document.getElementById("walkthrough-instruction");
+
+          if (detailBox && detailTitle && detailBody && instruction) {
             detailTitle.innerHTML = data.title;
             detailBody.innerHTML = data.body;
             detailBox.style.display = "block";
@@ -479,9 +485,9 @@
                 }
               });
             }
-          });
+          }
         });
-      });
+      })();
     </script>
 
     <h2 id="performance">Performance Analysis</h2>
@@ -575,8 +581,13 @@
       <tbody>
         <tr>
           <td><strong>Total Frame Time (CPU Loop)</strong></td>
-          <td><strong>4.573 ms</strong> (~218.7 FPS)</td>
-          <td><strong>7.780 ms</strong> (~128.5 FPS)</td>
+          <td><strong>4.573 ms</strong></td>
+          <td><strong>7.780 ms</strong></td>
+        </tr>
+        <tr>
+          <td><strong>Effective Throughput (FPS)</strong></td>
+          <td><strong>218.7 FPS</strong></td>
+          <td><strong>128.5 FPS</strong></td>
         </tr>
         <tr>
           <td><strong>CPU Compute / WASM Time</strong></td>
@@ -643,8 +654,13 @@
       <tbody>
         <tr>
           <td><strong>Total Frame Time (CPU Loop)</strong></td>
-          <td><strong>4.600 ms</strong> (~217.4 FPS)</td>
-          <td><strong>0.461 ms</strong> (~2171.5 FPS)</td>
+          <td><strong>4.600 ms</strong></td>
+          <td><strong>0.461 ms</strong></td>
+        </tr>
+        <tr>
+          <td><strong>Effective Throughput (FPS)</strong></td>
+          <td><strong>217.4 FPS</strong></td>
+          <td><strong>2171.5 FPS</strong></td>
         </tr>
         <tr>
           <td><strong>CPU Compute / WASM Time</strong></td>
@@ -798,6 +814,46 @@ transformed += shapeOffset + poseOffset;
       This architecture entirely bypasses WebAssembly for WebGL(GPU) mode. By executing the displacement accumulation in the vertex shader, the GPU takes advantage of its massive parallel hardware execution, leaving the CPU completely free of vertex-level loops.
     </p>
 
+    <h2 id="related-work">Related Work</h2>
+    <p>
+      Evaluating parametric human body models in real-time has been a major research focus across computer vision, computer graphics, and web systems engineering. 
+      Existing systems can be broadly categorized into statistical model optimization, desktop performance-oriented engines, and web-based character skinning runtimes.
+    </p>
+
+    <h3 id="related-statistical-models">Statistical Body Models &amp; Reference Software</h3>
+    <p>
+      The Skinned Multi-Person Linear (SMPL) model (<a href="https://dl.acm.org/doi/10.1145/2816795.2818013" target="_blank">Loper et al. [2015]</a>) <d-cite key="loper2015smpl"></d-cite> and its expressive extension SMPL-X (<a href="https://openaccess.thecvf.com/content_CVPR_2019/papers/Pavlakos_Expressive_Body_Capture_3D_Hands_Face_and_Body_From_a_CVPR_2019_paper.pdf" target="_blank">Pavlakos et al. [2019]</a>) <d-cite key="pavlakos2019expressive"></d-cite> established the mathematical standard for representing parameterized humanoid meshes. 
+      However, their canonical implementations are written in Python and rely on heavy frameworks like PyTorch or NumPy. 
+      While suitable for training and offline mesh-fitting pipelines, these runtimes introduce substantial latency and are restricted to native local interpreter environments, which prevents their deployment in browser sandboxes.
+    </p>
+
+    <h3 id="related-desktop-engines">Performance-Oriented Desktop runtimes</h3>
+    <p>
+      To support real-time desktop applications, several native C++ implementations have been developed. 
+      Libraries like <code>SMPLpp</code> and <code>smplxpp</code> reconstruct the model's forward pass in C++, utilizing <strong>libTorch</strong> (the PyTorch C++ library) to enable CUDA-accelerated evaluation on workstations. 
+      More recently, <code>torchure_smplx</code> optimized this pipeline to achieve sub-millisecond execution for batch processing. 
+      Although these desktop engines deliver high performance, their heavy dependency on CUDA drivers, local compiled binaries, and massive runtime footprints makes them incompatible with client-side web sandboxes.
+    </p>
+
+    <h3 id="related-web-skinning">Web-Based Character Skinning &amp; WebGL Limits</h3>
+    <p>
+      Web-based rendering frameworks like Three.js, Babylon.js, and specialized humanoid formats like <code>three-vrm</code> provide built-in support for Linear Blend Skinning (LBS). 
+      In standard configurations, bone matrices are computed in JavaScript on the CPU and uploaded as uniform arrays to the vertex shader. 
+      However, standard uniform-based skinning fails to support parametric body models:
+    </p>
+    <ul>
+      <li>
+        <strong>Lack of Blendshape Offsets:</strong> Standard engines lack native support for shape and pose dynamic offsets before skeletal skinning.
+      </li>
+      <li>
+        <strong>Uniform Vector Limitations:</strong> WebGL enforces a strict hardware limit on uniform storage (<code>MAX_VERTEX_UNIFORM_VECTORS</code>, typically 256 or 1024 float vectors). The dense displacement tables for the 6,890 SMPL vertices contain thousands of components, making uniform storage impossible.
+      </li>
+    </ul>
+    <p>
+      Our texture-packed WebGL GPU shader architecture bypasses these limitations. 
+      By packing the dense displacement tables into 2D floating-point textures and performing parallel lookups via <code>texelFetch</code> in the vertex shader, we achieve full compatibility with the SMPL parameter space while avoiding both WebGL uniform vector limits and JS-WASM boundary copy latency.
+    </p>
+
     <h2 id="conclusion">Conclusion</h2>
     <p>
       The <code>h3d.cpp</code> project's exploration of web rendering techniques demonstrates that there is no one-size-fits-all solution for real-time character animation. 
@@ -814,6 +870,30 @@ transformed += shapeOffset + poseOffset;
       WebAssembly interface bindings in <a href="file:///Users/ajasdaison/projects/h3d.cpp/h3d/WasmBindings.cc">h3d/WasmBindings.cc</a>, 
       and client integration scripts in <a href="file:///Users/ajasdaison/projects/h3d.cpp/smpl-web/src/main.js">smpl-web/src/main.js</a>.
     </p>
+    <d-bibliography>
+      <script type="text/bibtex">
+        @article{loper2015smpl,
+          title={SMPL: A skinned multi-person linear model},
+          author={Loper, Matthew and Mahmood, Naureen and Romero, Javier and Pons-Moll, Gerard and Black, Michael J},
+          journal={ACM transactions on graphics (TOG)},
+          volume={34},
+          number={6},
+          pages={1--16},
+          year={2015},
+          publisher={ACM New York, NY, USA},
+          url={https://dl.acm.org/doi/10.1145/2816795.2818013}
+        }
+
+        @inproceedings{pavlakos2019expressive,
+          title={Expressive body capture: 3D hands, face, and body from a single image},
+          author={Pavlakos, Georgios and Choutas, Vasileios and Ghorbani, Nima and Bolkart, Timo and Black, Michael J},
+          booktitle={Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition},
+          pages={10975--10985},
+          year={2019},
+          url={https://openaccess.thecvf.com/content_CVPR_2019/papers/Pavlakos_Expressive_Body_Capture_3D_Hands_Face_and_Body_From_a_CVPR_2019_paper.pdf}
+        }
+      </script>
+    </d-bibliography>
   </d-appendix>
 
   <distill-footer></distill-footer>
