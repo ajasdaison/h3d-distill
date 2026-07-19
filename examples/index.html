@@ -137,22 +137,22 @@
 
     <h2 id="introduction">Introduction</h2>
     <p>
-      Deploying real-time human avatar capture and 3D rendering applications traditionally involves a heavy Python-based machine learning stack. 
-      Frameworks like PyTorch, JAX, and CUDA are ubiquitous in research, but they introduce major friction for client-side deployment, particularly in real-time browser environments.
+      Parametric body models like <strong>SMPL (Skinned Multi-Person Linear model)</strong> allow us to represent a massive variety of realistic human body shapes and movements using just a handful of parameters. 
+      By adjusting simple controls for height, weight, and joint rotation, we can dynamically generate and animate detailed 3D human figures. 
+      This technology is at the core of virtual reality, digital fashion, medical posture analysis, and fitness tracking.
     </p>
-    
     <p>
-      The workstation-grade workstation runtime <a href="https://github.com/jerinphilip/h3d.cpp" target="_blank">h3d.cpp</a> consolidation bypasses this Python dependency using a native C++ engine. 
-      However, bringing these avatars to client-side browsers for interactive applications introduces a different systems challenge: how to evaluate 
-      3D parametric human body models like <strong>SMPL (Skinned Multi-Person Linear model)</strong> within the strict compute and sandbox constraints of the web browser.
+      Traditionally, these 3D models required expensive gaming computers and complex software installations. 
+      To make virtual avatars accessible to everyone, we must be able to run these models directly inside a standard web browser—rendering smoothly on ordinary laptops, tablets, and mobile phones.
     </p>
-    
     <p>
-      This systems-level study evaluates two distinct web architectures implemented in <code>h3d.cpp</code>'s web frontend (<code>smpl-web</code>): 
-      a high-performance <strong>C++ WebAssembly (WASM) CPU engine</strong>, and an optimized <strong>WebGL (GPU) backend</strong> utilizing custom Three.js GLSL shaders to offload vertex deformations entirely to the GPU. We analyze the architectural trade-offs, memory copy overhead, and execution times of both pipelines.
+      This article compares two different strategies for bringing interactive 3D avatars to the web: executing the math on the device's main processor (CPU) versus offloading the calculations to the graphics card (GPU). 
+      Below, you will find interactive pipeline walkthroughs, performance results, and design recommendations for web graphics.
     </p>
 
-    <h2 id="mathematical-foundation">The Mathematical Foundation of SMPL</h2>
+    <h2 id="literature-review">Literature Review</h2>
+
+    <h3 id="mathematical-foundation">The Mathematical Foundation of SMPL</h3>
     <p>
       To build and profile the rendering pipelines, we must first look at the mathematical formulations that define the shape and posture of the SMPL model. 
       SMPL represents a human body as a template mesh <d-math>T \in \mathbb{R}^{N \times 3}</d-math> containing <d-math>N = 6890</d-math> vertices, controlled by shape parameters <d-math>\beta \in \mathbb{R}^{10}</d-math> (the principal components of body shape variation) and pose parameters <d-math>\theta \in \mathbb{R}^{72}</d-math> (representing 24 joints in axis-angle format).
@@ -162,7 +162,7 @@
       The vertex transformation pipeline proceeds through four main mathematical steps:
     </p>
 
-    <h3 id="shape-blend-shapes">1. Shape Blend Shapes</h3>
+    <h4 id="shape-blend-shapes">1. Shape Blend Shapes</h4>
     <p>
       The shape parameters <d-math>\beta</d-math> scale predefined directions of body variation (e.g., height, weight, proportions) to deform the template mesh:
     </p>
@@ -173,7 +173,7 @@
       where <d-math>B_S(\beta) = \sum_{k=1}^{10} \beta_k S_k</d-math> is the shape deformation vector, and <d-math>S_k \in \mathbb{R}^{6890 \times 3}</d-math> represent the shape principal component displacements. On the CPU, this is mapped as flat float arrays of shape <d-math>(6890, 3, 10)</d-math>, accessed with strided strides of <d-math>v \times 30 + k \times 3 + \text{axis}</d-math>.
     </p>
 
-    <h3 id="pose-blend-shapes">2. Pose Blend Shapes</h3>
+    <h4 id="pose-blend-shapes">2. Pose Blend Shapes</h4>
     <p>
       To avoid artifacts like the "collapsing elbow" during joint rotations, SMPL adds pose-dependent dynamic offsets before skinning:
     </p>
@@ -184,7 +184,7 @@
       where <d-math>B_P(\theta) = \sum_{n=1}^{207} (R_n(\theta) - R_n(\theta^*)) P_n</d-math> is the pose-corrective offset vector, <d-math>R_n(\theta)</d-math> represents the local rotation matrix of joint <d-math>n</d-math>, and <d-math>P_n \in \mathbb{R}^{6890 \times 3}</d-math> represents the pose-corrective displacements. The pose feature vector is computed by taking the local rotation matrices of the 23 active joints (excluding the global root orientation) in <d-math>SO(3)</d-math> and subtracting the identity matrix <d-math>I</d-math> (yielding a 207-dimensional vector: <d-math>23 \text{ joints} \times 9 \text{ matrix elements}</d-math>).
     </p>
 
-    <h3 id="joint-regression">3. Joint Regression</h3>
+    <h4 id="joint-regression">3. Joint Regression</h4>
     <p>
       The 3D locations of the 24 joints <d-math>J(\beta)</d-math> are regressed from the shaped mesh template:
     </p>
@@ -195,7 +195,7 @@
       where <d-math>\mathcal{J} \in \mathbb{R}^{24 \times 6890}</d-math> is a sparse regressor matrix learned from data. For performance, rather than doing dense matrix multiplication, we perform sparse accumulation by looping only over non-zero weights in the pre-computed sparse index tables.
     </p>
 
-    <h3 id="linear-blend-skinning">4. Linear Blend Skinning (LBS)</h3>
+    <h4 id="linear-blend-skinning">4. Linear Blend Skinning (LBS)</h4>
     <p>
       Finally, the posed vertices are mapped to their world coordinates using joint transformations recursively computed along the kinematic tree:
     </p>
@@ -211,6 +211,64 @@
       <br>
       Each vertex in the SMPL model is typically influenced by multiple bones. To perform LBS efficiently, we restrict the influence to the top 4 most dominant joints per vertex and normalize their weights to sum to <d-math>1.0</d-math>. This matches the native constraints of GPU hardware skinning engines.
     </aside>
+
+    <h3 id="related-work">Related Work</h3>
+    <p>
+      Evaluating parametric human body models in real-time has been a major research focus across computer vision, computer graphics, and web systems engineering. 
+      Existing systems can be broadly categorized into statistical model optimization, desktop performance-oriented engines, and web-based character skinning runtimes.
+    </p>
+
+    <h4 id="related-statistical-models">Statistical Body Models &amp; Reference Software</h4>
+    <p>
+      The Skinned Multi-Person Linear (SMPL) model (<a href="https://dl.acm.org/doi/10.1145/2816795.2818013" target="_blank">Loper et al. [2015]</a>) <d-cite key="loper2015smpl"></d-cite> and its expressive extension SMPL-X (<a href="https://openaccess.thecvf.com/content_CVPR_2019/papers/Pavlakos_Expressive_Body_Capture_3D_Hands_Face_and_Body_From_a_CVPR_2019_paper.pdf" target="_blank">Pavlakos et al. [2019]</a>) <d-cite key="pavlakos2019expressive"></d-cite> established the mathematical standard for representing parameterized humanoid meshes. 
+      However, their canonical implementations are written in Python and rely on heavy frameworks like PyTorch or NumPy. 
+      While suitable for training and offline mesh-fitting pipelines, these runtimes introduce substantial latency and are restricted to native local interpreter environments, which prevents their deployment in browser sandboxes.
+    </p>
+
+    <h4 id="related-desktop-engines">Performance-Oriented Desktop runtimes</h4>
+    <p>
+      To support real-time desktop applications, several native C++ implementations have been developed. 
+      Libraries like <code>SMPLpp</code> and <code>smplxpp</code> reconstruct the model's forward pass in C++, utilizing <strong>libTorch</strong> (the PyTorch C++ library) to enable CUDA-accelerated evaluation on workstations. 
+      More recently, <code>torchure_smplx</code> optimized this pipeline to achieve sub-millisecond execution for batch processing. 
+      Although these desktop engines deliver high performance, their heavy dependency on CUDA drivers, local compiled binaries, and massive runtime footprints makes them incompatible with client-side web sandboxes.
+    </p>
+
+    <h4 id="related-web-skinning">Web-Based Character Skinning &amp; WebGL Limits</h4>
+    <p>
+      Web-based rendering frameworks like Three.js, Babylon.js, and specialized humanoid formats like <code>three-vrm</code> provide built-in support for Linear Blend Skinning (LBS). 
+      In standard configurations, bone matrices are computed in JavaScript on the CPU and uploaded as uniform arrays to the vertex shader. 
+      However, standard uniform-based skinning fails to support parametric body models:
+    </p>
+    <ul>
+      <li>
+        <strong>Lack of Blendshape Offsets:</strong> Standard engines lack native support for shape and pose dynamic offsets before skeletal skinning.
+      </li>
+      <li>
+        <strong>Uniform Vector Limitations:</strong> WebGL enforces a strict hardware limit on uniform storage (<code>MAX_VERTEX_UNIFORM_VECTORS</code>, typically 256 or 1024 float vectors). The dense displacement tables for the 6,890 SMPL vertices contain thousands of components, making uniform storage impossible.
+      </li>
+    </ul>
+    <p>
+      Our texture-packed WebGL GPU shader architecture bypasses these limitations. 
+      By packing the dense displacement tables into 2D floating-point textures and performing parallel lookups via <code>texelFetch</code> in the vertex shader, we achieve full compatibility with the SMPL parameter space while avoiding both WebGL uniform vector limits and JS-WASM boundary copy latency.
+    </p>
+
+    <h2 id="systems-architecture">Systems Architecture Overview</h2>
+    <p>
+      Deploying parametric human avatars in real-time traditionally requires a heavy Python-based machine learning stack consisting of PyTorch, JAX, and native CUDA dependencies. 
+      To bypass this friction for web browsers, the workstation-grade C++ runtime <a href="https://github.com/jerinphilip/h3d.cpp" target="_blank">h3d.cpp</a> consolidation enables native model evaluation. 
+      This study analyzes the performance and systems trade-offs of the two client-side architectures implemented in its web frontend (<code>smpl-web</code>):
+    </p>
+    <ul>
+      <li>
+        <strong>Pipeline A (WebAssembly CPU):</strong> Compiles the C++ SMPL implementation to browser-executable bytecode using <strong>Emscripten</strong> with SIMD vectorization (<code>-O3 -msimd128</code>). All model computations—including Rodrigues rotations, shape/pose blendshapes, forward kinematics, and skinning—are executed sequentially in WebAssembly on the CPU.
+      </li>
+      <li>
+        <strong>Pipeline B (WebGL GPU Shader):</strong> Offloads the model's parallel math to the GPU via custom WebGL vertex shaders, bypassing WebAssembly. Displacement tables are packed into 2D floating-point textures during initialization, allowing the vertex shader to perform parallel lookups via <code>texelFetch</code>, while the JavaScript thread only handles skeletal updates.
+      </li>
+    </ul>
+    <p>
+      The subsequent sections analyze the critical bottlenecks of these approaches, including WebAssembly-WebGL heap boundary copy latency, vertex uniform limits, and parallel GPU texturing costs.
+    </p>
 
     <h2 id="rendering-philosophies">Two Rendering Philosophies on the Web</h2>
     <p>
@@ -574,54 +632,54 @@
       <thead>
         <tr>
           <th>Pipeline Metric / Step</th>
-          <th>WASM (CPU) - Case 1</th>
-          <th>WebGL (GPU) + Correctives - Case 2 (Hybrid Baseline)</th>
+          <th>WASM (CPU) </th>
+          <th>WebGL (GPU) </th>
         </tr>
       </thead>
       <tbody>
         <tr>
-          <td><strong>Total Frame Time (CPU Loop)</strong></td>
-          <td><strong>4.573 ms</strong></td>
-          <td><strong>7.780 ms</strong></td>
+          <td><strong>Total Frame Time (CPU Loop) (ms)</strong></td>
+          <td><strong>4.573 </strong></td>
+          <td><strong>7.780 </strong></td>
         </tr>
         <tr>
           <td><strong>Effective Throughput (FPS)</strong></td>
-          <td><strong>218.7 FPS</strong></td>
-          <td><strong>128.5 FPS</strong></td>
+          <td><strong>218.7 </strong></td>
+          <td><strong>128.5 </strong></td>
         </tr>
         <tr>
-          <td><strong>CPU Compute / WASM Time</strong></td>
-          <td>4.131 ms (WASM)</td>
-          <td>7.455 ms (JS CPU)</td>
+          <td><strong>CPU Compute (ms)</strong></td>
+          <td>4.131 </td>
+          <td>7.455 </td>
         </tr>
         <tr>
-          <td>&nbsp;&nbsp;↳ Shape Blend (CPU)</td>
-          <td>0.538 ms</td>
-          <td>1.019 ms</td>
+          <td>&nbsp;&nbsp;↳ Shape Blend (CPU) (ms)</td>
+          <td>0.538 </td>
+          <td>1.019 </td>
         </tr>
         <tr>
-          <td>&nbsp;&nbsp;↳ Joint Regression (CPU)</td>
-          <td>0.215 ms</td>
-          <td>0.256 ms</td>
+          <td>&nbsp;&nbsp;↳ Joint Regression (CPU) (ms)</td>
+          <td>0.215 </td>
+          <td>0.256 </td>
         </tr>
         <tr>
-          <td>&nbsp;&nbsp;↳ Pose Feature / Blend (CPU)</td>
-          <td>2.051 ms</td>
-          <td>4.408 ms</td>
+          <td>&nbsp;&nbsp;↳ Pose Blend (CPU) (ms)</td>
+          <td>2.051 </td>
+          <td>4.408 </td>
         </tr>
         <tr>
-          <td>&nbsp;&nbsp;↳ Linear Blend Skinning (LBS)</td>
-          <td>1.031 ms</td>
-          <td style="color: rgba(0,0,0,0.4); font-style: italic;">GPU Shader</td>
+          <td>&nbsp;&nbsp;↳ Linear Blend Skinning (LBS) (ms)</td>
+          <td>1.031 </td>
+          <td style="color: rgba(0,0,0,0.4); font-style: italic;"> - </td>
         </tr>
         <tr>
-          <td>&nbsp;&nbsp;↳ Normal Calculation</td>
-          <td>0.254 ms</td>
-          <td style="color: rgba(0,0,0,0.4); font-style: italic;">GPU Shader</td>
+          <td>&nbsp;&nbsp;↳ Normal Calculation (ms)</td>
+          <td>0.254 </td>
+          <td style="color: rgba(0,0,0,0.4); font-style: italic;"> - </td>
         </tr>
         <tr>
-          <td><strong>JS-WASM Copy Time</strong></td>
-          <td>0.029 ms</td>
+          <td><strong>JS-WASM Copy Time (ms)</strong></td>
+          <td>0.029 </td>
           <td style="color: rgba(0,0,0,0.4); font-style: italic;">N/A</td>
         </tr>
       </tbody>
@@ -647,59 +705,59 @@
       <thead>
         <tr>
           <th>Pipeline Metric / Step</th>
-          <th>WASM (CPU) - Optimized Run</th>
-          <th>WebGL (GPU) + Correctives - Case 3 (Fully Offloaded)</th>
+          <th>WASM (CPU) </th>
+          <th>WebGL (GPU) </th>
         </tr>
       </thead>
       <tbody>
         <tr>
-          <td><strong>Total Frame Time (CPU Loop)</strong></td>
-          <td><strong>4.600 ms</strong></td>
-          <td><strong>0.461 ms</strong></td>
+          <td><strong>Total Frame Time (CPU Loop) (ms)</strong></td>
+          <td><strong>4.600 </strong></td>
+          <td><strong>0.461 </strong></td>
         </tr>
         <tr>
           <td><strong>Effective Throughput (FPS)</strong></td>
-          <td><strong>217.4 FPS</strong></td>
-          <td><strong>2171.5 FPS</strong></td>
+          <td><strong>217.4 </strong></td>
+          <td><strong>2171.5 </strong></td>
         </tr>
         <tr>
-          <td><strong>CPU Compute / WASM Time</strong></td>
-          <td>4.350 ms (WASM)</td>
-          <td>0.161 ms (JS CPU)</td>
+          <td><strong>CPU Compute (ms)</strong></td>
+          <td>4.350  </td>
+          <td>0.161  </td>
         </tr>
         <tr>
-          <td>&nbsp;&nbsp;↳ Shape Blend (CPU)</td>
-          <td>0.563 ms</td>
-          <td>0.000 ms (GPU Shader)</td>
+          <td>&nbsp;&nbsp;↳ Shape Blend (CPU) (ms)</td>
+          <td>0.563 </td>
+          <td>0.000 </td>
         </tr>
         <tr>
-          <td>&nbsp;&nbsp;↳ Joint Regression (CPU)</td>
-          <td>0.250 ms</td>
-          <td>0.015 ms</td>
+          <td>&nbsp;&nbsp;↳ Joint Regression (CPU) (ms)</td>
+          <td>0.250 </td>
+          <td>0.015 </td>
         </tr>
         <tr>
-          <td>&nbsp;&nbsp;↳ Pose Feature / Blend (CPU)</td>
-          <td>2.232 ms</td>
-          <td>0.015 ms</td>
+          <td>&nbsp;&nbsp;↳ Pose Blend (CPU) (ms)</td>
+          <td>2.232 </td>
+          <td>0.015 </td>
         </tr>
         <tr>
-          <td>&nbsp;&nbsp;↳ Linear Blend Skinning (LBS)</td>
-          <td>0.984 ms</td>
-          <td style="color: rgba(0,0,0,0.4); font-style: italic;">GPU Shader</td>
+          <td>&nbsp;&nbsp;↳ Linear Blend Skinning (LBS) (ms)</td>
+          <td>0.984 </td>
+          <td style="color: rgba(0,0,0,0.4); font-style: italic;"> - </td>
         </tr>
         <tr>
-          <td>&nbsp;&nbsp;↳ Normal Calculation</td>
-          <td>0.284 ms</td>
-          <td style="color: rgba(0,0,0,0.4); font-style: italic;">GPU Shader</td>
+          <td>&nbsp;&nbsp;↳ Normal Calculation (ms)</td>
+          <td>0.284 </td>
+          <td style="color: rgba(0,0,0,0.4); font-style: italic;"> - </td>
         </tr>
         <tr>
-          <td><strong>GPU Hardware Execution Time</strong></td>
-          <td>2.229 ms (Queries)</td>
-          <td>2.523 ms (Queries)</td>
+          <td><strong>GPU Hardware Execution Time (Queries) (ms)</strong></td>
+          <td>2.229 </td>
+          <td>2.523 </td>
         </tr>
         <tr>
-          <td><strong>JS-WASM Copy Time</strong></td>
-          <td>0.045 ms</td>
+          <td><strong>JS-WASM Copy Time (ms)</strong></td>
+          <td>0.045 </td>
           <td style="color: rgba(0,0,0,0.4); font-style: italic;">N/A</td>
         </tr>
       </tbody>
@@ -720,7 +778,96 @@
       </li>
     </ul>
 
-    <h3 id="memory-bandwidth">Memory and Bandwidth Overhead</h3>
+    <h3 id="flops-profiling">Mathematical FLOPs Profiling</h3>
+    <p>
+      To understand the computational complexity and performance profiles of both pipelines, we analyzed the source code of both the C++ reference engine in <code>h3d.cpp</code> and the WebGL client in <code>smpl-web/src/main.js</code>. 
+      For a single character with <d-math>N = 6,890</d-math> vertices, <d-math>F = 13,776</d-math> faces, and <d-math>|\beta| = 10</d-math> shape components, we profiled the exact number of Floating-Point Operations (FLOPs) required by the <strong>WASM CPU Pipeline</strong> and the <strong>WebGL GPU Pipeline</strong>.
+    </p>
+
+    <table>
+      <thead>
+        <tr>
+          <th>SMPL Pipeline Step</th>
+          <th>WASM CPU (C++ CPU)</th>
+          <th>WebGL GPU (JS CPU)</th>
+          <th>WebGL GPU (GPU Shader)</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td><strong>1. Rodrigues / Pose Feature</strong></td>
+          <td>2,136 </td>
+          <td>~2,205 </td>
+          <td>0 </td>
+        </tr>
+        <tr>
+          <td><strong>2. Shape Blendshapes (<d-math>B_S</d-math>)</strong></td>
+          <td>413,400 </td>
+          <td>0 </td>
+          <td>413,400 </td>
+        </tr>
+        <tr>
+          <td><strong>3. Joint Regression (<d-math>J</d-math>)</strong></td>
+          <td>992,160 </td>
+          <td>~4,320 <sup>*</sup></td>
+          <td>0 </td>
+        </tr>
+        <tr>
+          <td><strong>4. Pose Correctives (<d-math>B_P</d-math>)</strong></td>
+          <td>8,578,119 </td>
+          <td>0 </td>
+          <td>8,557,380</td>
+        </tr>
+        <tr>
+          <td><strong>5. Forward Kinematics (FK)</strong></td>
+          <td>5,333 </td>
+          <td>5,333 </td>
+          <td>0 </td>
+        </tr>
+        <tr>
+          <td><strong>6. Linear Blend Skinning (LBS)</strong></td>
+          <td>5,484,440</td>
+          <td>0</td>
+          <td>1,012,830 </td>
+        </tr>
+        <tr>
+          <td><strong>7. Normal Estimation &amp; Skinning</strong></td>
+          <td>399,524</td>
+          <td>0</td>
+          <td>661,440</td>
+        </tr>
+        <tr>
+          <td><strong>Grand Total (Per Frame)</strong></td>
+          <td><strong>15,875,112</strong></td>
+          <td><strong>~11,858<sup>**</sup></strong></td>
+          <td><strong>10,645,050</strong></td>
+        </tr>
+      </tbody>
+    </table>
+    <p style="font-size: 0.85em; color: rgba(0,0,0,0.5); font-style: italic; margin-top: -0.5rem;">
+      * Joint regression on the CPU in Pipeline B is optimized with a sparse CSR structure in JavaScript, executing only on non-zero weights.
+      <br>
+      ** During regular playback frames, joint regression is cached and only FK and Rodrigues run, reducing CPU workload to 7,538 FLOPs.
+    </p>
+
+    <p>
+      This profiling reveals key architectural insights:
+    </p>
+    <ul>
+      <li>
+        <strong>The CPU Offloading Factor:</strong> In Pipeline A, the CPU is responsible for the entire <strong>15.88 million FLOPs</strong> of mathematical calculations per frame. In Pipeline B, the CPU's responsibilities are reduced to only <strong>~11,858 FLOPs</strong> (a <strong>99.93%</strong> reduction in CPU floating-point operations). 
+      </li>
+      <li>
+        <strong>Sparse vs. Dense Operations:</strong> 
+        The C++ reference CPU implementation computes LBS skinning as a dense matrix combination across all 24 joints for every vertex (5.48 million FLOPs). 
+        Conversely, the WebGL pipeline leverages GPU hardware skinning which is sparse—restricting bone influences to a maximum of 4 joints per vertex, reducing LBS operations to <strong>1.01 million FLOPs</strong> on the GPU.
+      </li>
+      <li>
+        <strong>The Texture Fetch Cost:</strong> On the GPU, the 10.65 million FLOPs of blendshapes and correctives are executed in parallel across the GPU cores. However, this is accompanied by <strong>1,495,130 texture fetches</strong> per frame to query the displacement tables. Because WebGL texture fetches are latency-tolerant on modern GPU architectures, this offloading is highly efficient and leaves the CPU completely free to maintain UI interactivity and high frame rates.
+      </li>
+    </ul>
+
+      <!-- <h3 id="memory-bandwidth">Memory and Bandwidth Overhead</h3>
     <p>
       The main bottleneck of Pipeline A is the memory bandwidth between the WebAssembly memory heap (<code>HEAPF64</code>) and WebGL. 
       Because Emscripten works within its own isolated memory space, the calculated floating-point coordinates must be copied into a JavaScript typed array before they can be uploaded to the GPU's Vertex Buffer Objects (VBOs).
@@ -814,52 +961,9 @@ transformed += shapeOffset + poseOffset;
       This architecture entirely bypasses WebAssembly for WebGL(GPU) mode. By executing the displacement accumulation in the vertex shader, the GPU takes advantage of its massive parallel hardware execution, leaving the CPU completely free of vertex-level loops.
     </p>
 
-    <h2 id="related-work">Related Work</h2>
-    <p>
-      Evaluating parametric human body models in real-time has been a major research focus across computer vision, computer graphics, and web systems engineering. 
-      Existing systems can be broadly categorized into statistical model optimization, desktop performance-oriented engines, and web-based character skinning runtimes.
-    </p>
 
-    <h3 id="related-statistical-models">Statistical Body Models &amp; Reference Software</h3>
-    <p>
-      The Skinned Multi-Person Linear (SMPL) model (<a href="https://dl.acm.org/doi/10.1145/2816795.2818013" target="_blank">Loper et al. [2015]</a>) <d-cite key="loper2015smpl"></d-cite> and its expressive extension SMPL-X (<a href="https://openaccess.thecvf.com/content_CVPR_2019/papers/Pavlakos_Expressive_Body_Capture_3D_Hands_Face_and_Body_From_a_CVPR_2019_paper.pdf" target="_blank">Pavlakos et al. [2019]</a>) <d-cite key="pavlakos2019expressive"></d-cite> established the mathematical standard for representing parameterized humanoid meshes. 
-      However, their canonical implementations are written in Python and rely on heavy frameworks like PyTorch or NumPy. 
-      While suitable for training and offline mesh-fitting pipelines, these runtimes introduce substantial latency and are restricted to native local interpreter environments, which prevents their deployment in browser sandboxes.
-    </p>
-
-    <h3 id="related-desktop-engines">Performance-Oriented Desktop runtimes</h3>
-    <p>
-      To support real-time desktop applications, several native C++ implementations have been developed. 
-      Libraries like <code>SMPLpp</code> and <code>smplxpp</code> reconstruct the model's forward pass in C++, utilizing <strong>libTorch</strong> (the PyTorch C++ library) to enable CUDA-accelerated evaluation on workstations. 
-      More recently, <code>torchure_smplx</code> optimized this pipeline to achieve sub-millisecond execution for batch processing. 
-      Although these desktop engines deliver high performance, their heavy dependency on CUDA drivers, local compiled binaries, and massive runtime footprints makes them incompatible with client-side web sandboxes.
-    </p>
-
-    <h3 id="related-web-skinning">Web-Based Character Skinning &amp; WebGL Limits</h3>
-    <p>
-      Web-based rendering frameworks like Three.js, Babylon.js, and specialized humanoid formats like <code>three-vrm</code> provide built-in support for Linear Blend Skinning (LBS). 
-      In standard configurations, bone matrices are computed in JavaScript on the CPU and uploaded as uniform arrays to the vertex shader. 
-      However, standard uniform-based skinning fails to support parametric body models:
-    </p>
-    <ul>
-      <li>
-        <strong>Lack of Blendshape Offsets:</strong> Standard engines lack native support for shape and pose dynamic offsets before skeletal skinning.
-      </li>
-      <li>
-        <strong>Uniform Vector Limitations:</strong> WebGL enforces a strict hardware limit on uniform storage (<code>MAX_VERTEX_UNIFORM_VECTORS</code>, typically 256 or 1024 float vectors). The dense displacement tables for the 6,890 SMPL vertices contain thousands of components, making uniform storage impossible.
-      </li>
-    </ul>
-    <p>
-      Our texture-packed WebGL GPU shader architecture bypasses these limitations. 
-      By packing the dense displacement tables into 2D floating-point textures and performing parallel lookups via <code>texelFetch</code> in the vertex shader, we achieve full compatibility with the SMPL parameter space while avoiding both WebGL uniform vector limits and JS-WASM boundary copy latency.
-    </p>
 
     <h2 id="conclusion">Conclusion</h2>
-    <p>
-      The <code>h3d.cpp</code> project's exploration of web rendering techniques demonstrates that there is no one-size-fits-all solution for real-time character animation. 
-      WebAssembly provides a robust, zero-maintenance mechanism to share complex model math directly with high-performance desktop implementations, but faces scaling limits due to browser memory architectures and CPU-GPU bandwidth. 
-      Conversely, the WebGL(GPU) backend offers fluid performance for crowds and avatars, but requires careful CPU-GPU bandwidth management when active pose correctives require uploading vertex offsets every frame.
-    </p>
   </d-article>
 
   <d-appendix>
