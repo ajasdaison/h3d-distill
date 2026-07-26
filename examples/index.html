@@ -224,6 +224,24 @@
       However, their canonical implementations are written in Python and rely on heavy frameworks like PyTorch or NumPy. 
       While suitable for training and offline mesh-fitting pipelines, these runtimes introduce substantial latency and are restricted to native local interpreter environments, which prevents their deployment in browser sandboxes.
     </p>
+    <p>
+      More recent advances in parametric body modeling expand the demographic range and structural granularity of statistical human representations:
+    </p>
+    <ul>
+      <li>
+        <strong>All-Age Parametric Modeling (ANNY):</strong> 
+        The <a href="https://europe.naverlabs.com/blog/anny-a-free-to-use-3d-human-parametric-model-for-all-ages/" target="_blank">ANNY model</a> (<d-cite key="lafleche2024anny"></d-cite>) addresses a major limitation of standard SMPL (which primarily focuses on adult body proportions) by introducing an open-source, fully-differentiable 3D parametric human model designed for all ages—ranging from infants to the elderly. 
+        ANNY builds upon parametric mesh topologies and WHO anthropometric statistics to provide continuous phenotype control over age, height, and weight. 
+        While ANNY provides crucial expressive capabilities for pediatric and geriatric modeling, its evaluation still relies on Python/PyTorch pipelines. 
+        <em>Scope Note:</em> Optimizing multi-age parametric models like ANNY is outside the immediate scope of this paper; our current work focuses strictly on performance-optimizing the canonical, adult-focused SMPL model for real-time client-side web rendering.
+      </li>
+      <li>
+        <strong>High-Fidelity Anthropometric Ecosystems (GNM):</strong> 
+        Google's <a href="https://github.com/google/GNM" target="_blank">Generative aNthropometric Model (GNM)</a> (<d-cite key="google2024gnm"></d-cite>) introduces an open-source ecosystem of scan-based parametric human models. 
+        In contrast to SMPL's whole-body linear blendshape formulation (<d-math>N = 6,890</d-math> vertices, 10 shape components, 24 joints), models like GNM Head focus on high-granularity parametric facial identity (253 parameters) and expression (383 parameters) calibrated directly from 3D scans. 
+        While GNM releases target desktop DCC tools (Blender, Maya, Houdini) via PyTorch and JAX, its underlying parametric shape principles share similarities with statistical body representations like SMPL.
+      </li>
+    </ul>
 
     <h4 id="related-desktop-engines">Performance-Oriented Desktop runtimes</h4>
     <p>
@@ -272,29 +290,43 @@
 
     <h2 id="rendering-philosophies">Two Rendering Philosophies on the Web</h2>
     <p>
-      To implement these equations in a web browser, <code>h3d.cpp</code> provides two architectures inside the interactive viewer:
+      To evaluate parametric human body models in a web browser, <code>h3d.cpp</code> implements two distinct rendering philosophies. 
+      It is critical to note that WebGL uses the device's physical GPU directly through a secure browser interface that translates JavaScript API calls into native graphics commands (OpenGL ES, Metal, Vulkan, or Direct3D). 
+      Furthermore, WebGL shaders are not limited to rendering-only math; they execute arbitrary floating-point numerical computations inside the graphics pipeline.
     </p>
 
     <div style="display: flex; gap: 2rem; margin: 1.5rem 0;">
-      <div style="flex: 1;">
-        <h3 id="pipeline-a">Pipeline A: WASM CPU Engine</h3>
+      <div style="flex: 1; background: rgba(99, 102, 241, 0.03); padding: 1.25rem; border-radius: 6px; border: 1px solid rgba(99, 102, 241, 0.15);">
+        <h3 id="pipeline-a" style="margin-top: 0;">Pipeline A: WASM CPU Engine</h3>
         <p>
-          This engine compiles the C++ SMPL implementation directly to WebAssembly using <strong>Emscripten</strong> with optimization flags (<code>-O3 -msimd128</code>).
-          All mathematical steps—including Rodrigues rotations, Shape/Pose Blend Shapes, Forward Kinematics, LBS, and Vertex Normal cross-products—are executed in C++ on the CPU.
+          Compiles the C++ SMPL implementation directly to WebAssembly using <strong>Emscripten</strong> with SIMD vectorization (<code>-O3 -msimd128</code>).
         </p>
-        <p>
-          The JavaScript wrapper passes parameters by copying values into the WASM heap virtual memory space and directly reads completed, fully-skinned vertices and normals from heap pointers to update Three.js Vertex Buffer Objects (VBOs).
+        <p><strong>CPU (WASM) Execution:</strong></p>
+        <ul style="padding-left: 1.2rem; font-size: 0.9em;">
+          <li>Shape blend (<d-math>B_S</d-math>) &amp; Pose blend (<d-math>B_P</d-math>)</li>
+          <li>Rodrigues rotations &amp; Joint regression</li>
+          <li>Forward Kinematics (FK) &amp; Linear Blend Skinning</li>
+          <li>Normal Estimation &amp; Vertex generation</li>
+        </ul>
+        <p><strong>GPU Role:</strong></p>
+        <p style="font-size: 0.9em; margin-bottom: 0;">
+          Acts strictly as a display device. Receives 6,890 fully-computed 3D vertex positions and normals uploaded across the CPU-GPU bus every frame and rasterizes them.
         </p>
       </div>
-      <div style="flex: 1;">
-        <h3 id="pipeline-b">Pipeline B: WebGL(GPU)</h3>
+      <div style="flex: 1; background: rgba(6, 182, 212, 0.03); padding: 1.25rem; border-radius: 6px; border: 1px solid rgba(6, 182, 212, 0.15);">
+        <h3 id="pipeline-b" style="margin-top: 0;">Pipeline B: WebGL (GPU) Shader Engine</h3>
         <p>
-          This pipeline offloads the expensive vertex deformation mathematics entirely to the GPU's vertex shaders via custom WebGL modifications, bypassing WebAssembly.
+          Offloads the model's parallel mathematics to the GPU via custom WebGL vertex shaders, bypassing WebAssembly.
         </p>
-        <p>
-          During initialization, the full displacement tables for shape and pose variations are packed into 2D floating-point textures. 
-          On each frame, the CPU (running JavaScript) only handles lightweight tasks: converting joint orientations into quaternions for the skeleton, computing the 207-dimensional pose feature vector, and regressing joints (only when shape parameters change).
-          The vertex shader fetches the displacements from the textures, deforms the base template, and executes Linear Blend Skinning (LBS) in parallel.
+        <p><strong>CPU (JavaScript) Execution:</strong></p>
+        <ul style="padding-left: 1.2rem; font-size: 0.9em;">
+          <li>Joint regression (cached/sparse)</li>
+          <li>Pose feature vector computation (<d-math>207</d-math> dims)</li>
+          <li>Uploads small control uniforms (<d-math>\beta</d-math>, pose features, bone matrices)</li>
+        </ul>
+        <p><strong>GPU (Device Shader Cores) Execution:</strong></p>
+        <p style="font-size: 0.9em; margin-bottom: 0;">
+          Executes displacement lookups via <code>texelFetch</code>, shape/pose correctives, sparse LBS, normal estimation, AND immediate rendering in parallel across thousands of shader cores.
         </p>
       </div>
     </div>
@@ -867,7 +899,41 @@
       </li>
     </ul>
 
-      <!-- <h3 id="memory-bandwidth">Memory and Bandwidth Overhead</h3>
+    <h3 id="speedup-drivers">Architectural Drivers of the WebGL GPU Speedup</h3>
+    <p>
+      Both rendering pipelines utilize the exact same physical GPU hardware for final display rasterization. The massive performance advantage of Pipeline B (CPU computation dropping from <strong>4.35 ms</strong> to <strong>0.16 ms</strong>) stems from four fundamental architectural distinctions:
+    </p>
+
+    <ol>
+      <li>
+        <strong>Massive Parallel Execution:</strong> 
+        In the WASM CPU engine, a single thread (or a small set of SIMD vector units) processes the <d-math>N = 6,890</d-math> vertices sequentially. 
+        In WebGL GPU mode, thousands of independent shader cores execute the vertex shader simultaneously—processing many vertices in parallel across GPU execution units.
+      </li>
+      <li>
+        <strong>Drastic CPU-to-GPU Data Transfer Reduction:</strong> 
+        With WASM, every frame requires uploading <d-math>6,890</d-math> vertex position vectors and <d-math>6,890</d-math> normal vectors across the CPU-GPU bus (a substantial data transfer). 
+        With WebGL, the CPU uploads only <d-math>10</d-math> shape parameters (<d-math>\beta</d-math>), <d-math>207</d-math> pose features, and <d-math>24</d-math> bone matrices (a tiny uniform payload of a few kilobytes). The deformed mesh vertices never cross the bus—they are generated directly inside GPU memory.
+      </li>
+      <li>
+        <strong>GPU Memory Locality:</strong> 
+        Displacement tables are stored as floating-point 2D textures in GPU VRAM during initialization. Every frame, the GPU queries textures locally via <code>texelFetch</code>, computes offsets, skins the mesh, and renders without requesting data from host RAM.
+      </li>
+      <li>
+        <strong>Compute-and-Render Pipeline:</strong> 
+        WASM forces a serial workflow: <em>CPU computes mesh &rarr; bus transfer &rarr; GPU draws</em>. WebGL fuses computation and rendering: <em>GPU computes mesh in vertex shader &rarr; immediate GPU rasterization</em>.
+      </li>
+    </ol>
+
+    <aside id="note-factory-analogy">
+      <strong>Analogy: The Factory Model</strong>
+      <br>
+      <strong>WASM CPU Pipeline:</strong> A single engineer (the CPU) manually constructs all 6,890 parts sequentially, then ships the finished parts to a factory (the GPU) purely for painting. The factory workers remain idle during manufacturing.
+      <br><br>
+      <strong>WebGL GPU Pipeline:</strong> The engineer sends only a concise blueprint (small control uniforms). Thousands of workers inside the factory (GPU shader cores) build their assigned parts simultaneously and paint them immediately on site.
+    </aside>
+
+      <!--  <h3 id="memory-bandwidth">Memory and Bandwidth Overhead</h3>
     <p>
       The main bottleneck of Pipeline A is the memory bandwidth between the WebAssembly memory heap (<code>HEAPF64</code>) and WebGL. 
       Because Emscripten works within its own isolated memory space, the calculated floating-point coordinates must be copied into a JavaScript typed array before they can be uploaded to the GPU's Vertex Buffer Objects (VBOs).
@@ -959,11 +1025,14 @@ transformed += shapeOffset + poseOffset;
     </d-code>
     <p>
       This architecture entirely bypasses WebAssembly for WebGL(GPU) mode. By executing the displacement accumulation in the vertex shader, the GPU takes advantage of its massive parallel hardware execution, leaving the CPU completely free of vertex-level loops.
-    </p>
-
-
+</p> -->
 
     <h2 id="conclusion">Conclusion</h2>
+    <p>
+      The <code>h3d.cpp</code> project's exploration of web rendering techniques demonstrates that there is no one-size-fits-all solution for real-time character animation. 
+      WebAssembly provides a robust, zero-maintenance mechanism to share complex model math directly with high-performance desktop implementations, but faces scaling limits due to browser memory architectures and CPU-GPU bandwidth. 
+      Conversely, the WebGL(GPU) backend offers fluid performance for crowds and avatars, but requires careful CPU-GPU bandwidth management when active pose correctives require uploading vertex offsets every frame.
+    </p>
   </d-article>
 
   <d-appendix>
@@ -995,6 +1064,22 @@ transformed += shapeOffset + poseOffset;
           pages={10975--10985},
           year={2019},
           url={https://openaccess.thecvf.com/content_CVPR_2019/papers/Pavlakos_Expressive_Body_Capture_3D_Hands_Face_and_Body_From_a_CVPR_2019_paper.pdf}
+        }
+
+        @misc{lafleche2024anny,
+          title={Anny: A Free-to-Use 3D Human Parametric Model for All Ages},
+          author={Lafleche, David and NAVER LABS Europe Team},
+          year={2024},
+          publisher={NAVER LABS Europe},
+          url={https://europe.naverlabs.com/blog/anny-a-free-to-use-3d-human-parametric-model-for-all-ages/}
+        }
+
+        @misc{google2024gnm,
+          title={GNM: Generative aNthropometric Model Ecosystem},
+          author={Google Research},
+          year={2024},
+          publisher={GitHub},
+          url={https://github.com/google/GNM}
         }
       </script>
     </d-bibliography>
