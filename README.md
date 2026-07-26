@@ -1,26 +1,25 @@
-# HUMANS 3D Distill
+# Distill Template
 
-This repository hosts the Distill-style interactive article for [**Humans 3D**](https://github.com/jerinphilip/h3d.cpp.git).
-It is based on the [Distill template](https://github.com/distillpub/template).
+This is the repository for the Distill web framework. 
 
-## Getting Started
+## Contributing
 
-### Setup
-**Clone the repository:**
-```bash
-git clone git@github.com:ajasdaison/h3d-distill.git
-cd h3d-distill
-```
-**Install dependencies:**
-```bash
-npm install
-```
 
-**Start the development server:**
-```bash
-npm run dev
-```
+To give feedback, report a bug, or request a feature, please open an issue.
 
-**Open in your browser:**
-http://127.0.0.1:3000
+To contribute a change, [check out the contributing guide](CONTRIBUTING.md).
 
+### Local Development
+
+First, run `npm install` to install all node modules required. Then, run `npm run dev` to start a watching build rollup server. To view the sample pages in the repo, you can run `npm run serve` as a separate process which starts a static server. `npm run build` will run a one-time build.
+
+
+## Disclaimer & License
+
+_This project is research code. It is not an official product of Google or any other institution supporting Distill._
+
+Copyright 2018, The Distill Template Authors.
+
+Licensed under the Apache License, Version 2.0
+
+See the [full license](LICENSE).
